@@ -10,8 +10,8 @@
 #   - AUTHORITY_INTERNAL_KEY set in all workers
 #
 # Usage:
-#   FRONTEND_URL=https://411bz-frontend.<account>.workers.dev \
-#   AUTH_KEY=<your-authority-internal-key> \
+#   export FRONTEND_URL="https://411bz-frontend.<account>.workers.dev"
+#   export AUTH_KEY='your-authority-internal-key'   # single quotes avoid shell metachar issues
 #   ./scripts/e2e-test.sh
 # ============================================================================
 set -euo pipefail
@@ -56,9 +56,9 @@ echo ""
 # ── Step 2: Runtime config ──
 echo "Step 2: Runtime Config"
 CONFIG=$(http_get "/api/runtime-config" || echo '{}')
-check "Runtime config returns data" [ "$(echo "$CONFIG" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("data",{}).get("platform",""))' 2>/dev/null)" = "411bz.ai" ]
-check "Runtime config has 12 stages" [ "$(echo "$CONFIG" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("data",{}).get("features",{}).get("orchestrator_stages",0))' 2>/dev/null)" = "12" ]
-check "Runtime config has 600 categories" [ "$(echo "$CONFIG" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("data",{}).get("features",{}).get("examiner_categories",0))' 2>/dev/null)" = "600" ]
+check "Runtime config returns data" [ "$(echo "$CONFIG" | python -c 'import sys,json; d=json.load(sys.stdin); print(d.get("data",{}).get("platform",""))' 2>/dev/null)" = "411bz.ai" ]
+check "Runtime config has 12 stages" [ "$(echo "$CONFIG" | python -c 'import sys,json; d=json.load(sys.stdin); print(d.get("data",{}).get("features",{}).get("orchestrator_stages",0))' 2>/dev/null)" = "12" ]
+check "Runtime config has 600 categories" [ "$(echo "$CONFIG" | python -c 'import sys,json; d=json.load(sys.stdin); print(d.get("data",{}).get("features",{}).get("examiner_categories",0))' 2>/dev/null)" = "600" ]
 echo ""
 
 # ── Step 3: Create test tenant ──
@@ -71,13 +71,13 @@ TENANT_RESP=$(http_post "/api/v1/tenants" "{
   \"business_type\": \"LocalBusiness\",
   \"plan\": \"free30\"
 }" || echo '{}')
-check "Tenant created" [ "$(echo "$TENANT_RESP" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("data",{}).get("tenant_id",""))' 2>/dev/null)" = "$TENANT_ID" ]
+check "Tenant created" [ "$(echo "$TENANT_RESP" | python -c 'import sys,json; d=json.load(sys.stdin); print(d.get("data",{}).get("tenant_id",""))' 2>/dev/null)" = "$TENANT_ID" ]
 echo ""
 
 # ── Step 4: Start pipeline ──
 echo "Step 4: Start Pipeline Run"
 RUN_RESP=$(http_post "/api/pipeline/start" "{\"tenant_id\": \"$TENANT_ID\"}" || echo '{}')
-RUN_ID=$(echo "$RUN_RESP" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("run_id",""))' 2>/dev/null || echo "")
+RUN_ID=$(echo "$RUN_RESP" | python -c 'import sys,json; d=json.load(sys.stdin); print(d.get("run_id",""))' 2>/dev/null || echo "")
 check "Pipeline started" [ -n "$RUN_ID" ]
 echo "  Run ID: $RUN_ID"
 echo ""
@@ -91,7 +91,7 @@ while [ "$ELAPSED" -lt "$MAX_WAIT" ] && [ "$PIPELINE_STATUS" = "running" ]; do
   sleep 5
   ELAPSED=$((ELAPSED + 5))
   STATUS_RESP=$(http_get "/api/pipeline/$RUN_ID" || echo '{}')
-  PIPELINE_STATUS=$(echo "$STATUS_RESP" | python3 -c 'import sys,json; d=json.load(sys.stdin); r=d.get("data",{}).get("run",{}); print(r.get("status","unknown"))' 2>/dev/null || echo "unknown")
+  PIPELINE_STATUS=$(echo "$STATUS_RESP" | python -c 'import sys,json; d=json.load(sys.stdin); r=d.get("data",{}).get("run",{}); print(r.get("status","unknown"))' 2>/dev/null || echo "unknown")
   echo "  [$ELAPSED s] Status: $PIPELINE_STATUS"
 done
 check "Pipeline completed or paused" [ "$PIPELINE_STATUS" = "completed" ] || [ "$PIPELINE_STATUS" = "paused" ]
@@ -102,22 +102,22 @@ echo "Step 6: Verify Pipeline Artifacts"
 DETAIL=$(http_get "/api/pipeline/$RUN_ID" || echo '{}')
 
 # Check transitions exist
-TRANSITION_COUNT=$(echo "$DETAIL" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get("data",{}).get("transitions",[])))' 2>/dev/null || echo "0")
+TRANSITION_COUNT=$(echo "$DETAIL" | python -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get("data",{}).get("transitions",[])))' 2>/dev/null || echo "0")
 check "Stage transitions recorded" [ "$TRANSITION_COUNT" -gt "0" ]
 
 # Check CWAR decisions exist
-CWAR_COUNT=$(echo "$DETAIL" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get("data",{}).get("cwar",[])))' 2>/dev/null || echo "0")
+CWAR_COUNT=$(echo "$DETAIL" | python -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get("data",{}).get("cwar",[])))' 2>/dev/null || echo "0")
 check "CWAR decisions recorded" [ "$CWAR_COUNT" -gt "0" ]
 
 # Check AGE decisions (may be 0 if no pauses)
-AGE_COUNT=$(echo "$DETAIL" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get("data",{}).get("age",[])))' 2>/dev/null || echo "0")
+AGE_COUNT=$(echo "$DETAIL" | python -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get("data",{}).get("age",[])))' 2>/dev/null || echo "0")
 echo "  AGE decisions: $AGE_COUNT (0 is valid if no pauses)"
 echo ""
 
 # ── Step 7: Verify evidence ──
 echo "Step 7: Verify Evidence"
 EVIDENCE=$(http_get "/api/v1/evidence/$TENANT_ID" || echo '{}')
-EVIDENCE_COUNT=$(echo "$EVIDENCE" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("data",{}).get("total",0) if isinstance(d.get("data"),dict) else len(d.get("data",[])))' 2>/dev/null || echo "0")
+EVIDENCE_COUNT=$(echo "$EVIDENCE" | python -c 'import sys,json; d=json.load(sys.stdin); print(d.get("data",{}).get("total",0) if isinstance(d.get("data"),dict) else len(d.get("data",[])))' 2>/dev/null || echo "0")
 check "Evidence exists for tenant" [ "$EVIDENCE_COUNT" -gt "0" ] || true
 echo "  Evidence count: $EVIDENCE_COUNT"
 echo ""
@@ -125,7 +125,7 @@ echo ""
 # ── Step 8: Verify scorecards ──
 echo "Step 8: Verify Scorecards"
 SCORECARDS=$(http_get "/api/v1/scorecards" || echo '{}')
-SCORECARD_COUNT=$(echo "$SCORECARDS" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get("data",[])))' 2>/dev/null || echo "0")
+SCORECARD_COUNT=$(echo "$SCORECARDS" | python -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get("data",[])))' 2>/dev/null || echo "0")
 check "Scorecards exist" [ "$SCORECARD_COUNT" -gt "0" ] || true
 echo "  Scorecard count: $SCORECARD_COUNT"
 echo ""
@@ -133,7 +133,7 @@ echo ""
 # ── Step 9: Verify artifacts ──
 echo "Step 9: Verify Artifacts"
 ARTIFACTS=$(http_get "/api/v1/tenants/$TENANT_ID/artifacts" || echo '{}')
-ARTIFACT_COUNT=$(echo "$ARTIFACTS" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get("data",[])))' 2>/dev/null || echo "0")
+ARTIFACT_COUNT=$(echo "$ARTIFACTS" | python -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get("data",[])))' 2>/dev/null || echo "0")
 check "Artifacts exist for tenant" [ "$ARTIFACT_COUNT" -gt "0" ] || true
 echo "  Artifact count: $ARTIFACT_COUNT"
 echo ""
@@ -141,7 +141,7 @@ echo ""
 # ── Step 10: Verify content hashes ──
 echo "Step 10: Verify Content Hashes"
 if [ "$ARTIFACT_COUNT" -gt "0" ]; then
-  FIRST_HASH=$(echo "$ARTIFACTS" | python3 -c 'import sys,json; d=json.load(sys.stdin); arts=d.get("data",[]); print(arts[0].get("content_hash","") if arts else "")' 2>/dev/null || echo "")
+  FIRST_HASH=$(echo "$ARTIFACTS" | python -c 'import sys,json; d=json.load(sys.stdin); arts=d.get("data",[]); print(arts[0].get("content_hash","") if arts else "")' 2>/dev/null || echo "")
   check "Artifact has SHA-256 hash" [ ${#FIRST_HASH} -eq 64 ]
 else
   echo "  (skipped — no artifacts)"
