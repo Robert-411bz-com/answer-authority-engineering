@@ -1,6 +1,6 @@
 name = "411bz-boss-ai"
 main = "src/index.ts"
-compatibility_date = "2024-09-25"
+compatibility_date = "2024-12-01"
 account_id = "0a99972e989785e2bf99eb4bef63dd21"
 [vars]
 WORKER_ID = "411bz-boss-ai"

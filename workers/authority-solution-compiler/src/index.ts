@@ -1,12 +1,16 @@
 /**
  * authority-solution-compiler — SOLE cure compiler.
  * No other worker creates cure objects. All cures trace to evidence.
+ *
+ * All thresholds (impact baselines, priority values, confidence scaling)
+ * are resolved via TenantPolicy — no magic numbers in this file.
  */
 
 import { Hono } from 'hono';
 import {
   assertTenantId, createCureId, validateCure, type CureAction,
   wrapTruth, generateRequestId, POLICY_DEFAULTS, CANONICAL_WORKERS,
+  TenantPolicy,
 } from 'shared-authority-core';
 
 type Bindings = {
@@ -36,6 +40,15 @@ app.post('/v1/compile', async (c) => {
   assertTenantId(body.tenant_id);
 
   const headers = { 'X-Authority-Key': c.env.AUTHORITY_INTERNAL_KEY, 'Content-Type': 'application/json' };
+
+  // Load tenant policy for threshold resolution
+  const tenantResp = await c.env.ENGINE.fetch(new Request(`http://internal/v1/tenants/${body.tenant_id}`, { headers }));
+  let policy = new TenantPolicy();
+  if (tenantResp.ok) {
+    const tenantData = await tenantResp.json() as { data: { policy_overrides?: string } };
+    policy = TenantPolicy.fromRow(tenantData.data || {});
+  }
+
   const cures: CureAction[] = [];
   const errors: string[] = [];
 
@@ -54,9 +67,9 @@ app.post('/v1/compile', async (c) => {
       target: diag.category,
       instructions: generateInstructions(diag),
       evidence_ids: diag.evidence_ids,
-      priority: mapSeverityToPriority(diag.severity),
-      estimated_impact: estimateImpact(diag.severity, diag.evidence_ids.length),
-      confidence: computeCureConfidence(diag.evidence_ids.length),
+      priority: mapSeverityToPriority(diag.severity, policy),
+      estimated_impact: estimateImpact(diag.severity, diag.evidence_ids.length, policy),
+      confidence: computeCureConfidence(diag.evidence_ids.length, policy),
       status: 'pending',
       created_at: new Date().toISOString(),
     };
@@ -72,13 +85,13 @@ app.post('/v1/compile', async (c) => {
 
   // Persist cures to engine via service binding
   if (cures.length > 0) {
-    await c.env.ENGINE.fetch(new Request('http://internal/v1/tenants/' + body.tenant_id + '/cures/batch', {
+    await c.env.ENGINE.fetch(new Request(`http://internal/v1/tenants/${body.tenant_id}/cures/batch`, {
       method: 'POST', headers, body: JSON.stringify({ cures }),
     }));
   }
 
   return c.json(wrapTruth(
-    { compiled: cures.length, errors: errors.length, cure_ids: cures.map(c => c.cure_id), error_details: errors },
+    { compiled: cures.length, errors: errors.length, cure_ids: cures.map(cu => cu.cure_id), error_details: errors },
     c.env.WORKER_ID, generateRequestId()
   ));
 });
@@ -93,24 +106,36 @@ function mapSeverityToAction(severity: string): CureAction['action_type'] {
   }
 }
 
-function mapSeverityToPriority(severity: string): number {
+function mapSeverityToPriority(severity: string, policy: TenantPolicy): number {
   switch (severity) {
-    case 'critical': return 100;
-    case 'high': return 75;
-    case 'medium': return 50;
-    case 'low': return 25;
-    default: return 10;
+    case 'critical': return policy.resolve('CURE_PRIORITY_CRITICAL');
+    case 'high': return policy.resolve('CURE_PRIORITY_HIGH');
+    case 'medium': return policy.resolve('CURE_PRIORITY_MEDIUM');
+    case 'low': return policy.resolve('CURE_PRIORITY_LOW');
+    default: return policy.resolve('CURE_PRIORITY_LOW');
   }
 }
 
-function estimateImpact(severity: string, evidenceCount: number): number {
-  const base = severity === 'critical' ? 0.8 : severity === 'high' ? 0.6 : severity === 'medium' ? 0.4 : 0.2;
-  const evidenceBoost = Math.min(0.2, evidenceCount * 0.02);
+function estimateImpact(severity: string, evidenceCount: number, policy: TenantPolicy): number {
+  let base: number;
+  switch (severity) {
+    case 'critical': base = policy.resolve('CURE_IMPACT_CRITICAL'); break;
+    case 'high': base = policy.resolve('CURE_IMPACT_HIGH'); break;
+    case 'medium': base = policy.resolve('CURE_IMPACT_MEDIUM'); break;
+    case 'low': base = policy.resolve('CURE_IMPACT_LOW'); break;
+    default: base = policy.resolve('CURE_IMPACT_LOW');
+  }
+  const maxBoost = policy.resolve('CURE_IMPACT_MAX_BOOST');
+  const perEvidence = policy.resolve('CURE_IMPACT_EVIDENCE_BOOST');
+  const evidenceBoost = Math.min(maxBoost, evidenceCount * perEvidence);
   return Math.min(1.0, base + evidenceBoost);
 }
 
-function computeCureConfidence(evidenceCount: number): number {
-  return Math.min(0.95, 0.5 + evidenceCount * 0.05);
+function computeCureConfidence(evidenceCount: number, policy: TenantPolicy): number {
+  const base = policy.resolve('CURE_CONFIDENCE_BASE');
+  const perEvidence = policy.resolve('CURE_CONFIDENCE_PER_EVIDENCE');
+  const max = policy.resolve('CURE_CONFIDENCE_MAX');
+  return Math.min(max, base + evidenceCount * perEvidence);
 }
 
 function generateInstructions(diag: { category: string; severity: string; description: string }): string {
