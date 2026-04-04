@@ -2,5 +2,12 @@ name = "411bz-boss-ai"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 account_id = "0a99972e989785e2bf99eb4bef63dd21"
+
+# Production still had Durable Objects from an older dashboard-published build (CountersDO).
+# This worker is now Hono-only; remove the stale DO class so deploy can succeed.
+[[migrations]]
+tag = "2026-04-04-remove-counters-do"
+deleted_classes = ["CountersDO"]
+
 [vars]
 WORKER_ID = "411bz-boss-ai"
