@@ -1,0 +1,32 @@
+name = "411bz-orchestrator"
+main = "src/index.ts"
+compatibility_date = "2024-09-25"
+account_id = "0a99972e989785e2bf99eb4bef63dd21"
+
+[vars]
+WORKER_ID = "411bz-orchestrator"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "orchestrator-production"
+database_id = "orchestrator-production-id"
+
+[[services]]
+binding = "ENGINE"
+service = "411bz-authority-engine"
+
+[[services]]
+binding = "EXAMINER"
+service = "authority-examiner"
+
+[[services]]
+binding = "COMPILER"
+service = "authority-solution-compiler"
+
+[[services]]
+binding = "FORGE"
+service = "authority-content-forge"
+
+[[services]]
+binding = "OBSERVATORY"
+service = "411bz-observatory"

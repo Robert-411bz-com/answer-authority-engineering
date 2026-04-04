@@ -1,81 +1,67 @@
-# Answer Authority Engineering™
+# 411bz.ai — Answer Authority Engineering Platform v2.0
 
-Most websites are invisible to AI systems. LLMs cannot cite what they cannot parse.
+> Permanent systems repair. No temporary fixes. No compliance theater.
 
-**Answer Authority Engineering™** is a governance-first framework for making businesses machine-citable, findable, and authoritative across every AI surface — from ChatGPT and Claude to Perplexity and Google AI Overviews.
-
-## The Problem
-
-- **99.7% of websites** have no structured authority signals for AI systems
-- Traditional SEO does not translate to LLM citation probability
-- Businesses are being misrepresented, hallucinated, or simply invisible in AI-generated answers
-- Ungoverned AI automation creates liability risk for enterprises
-
-## What Answer Authority Engineering™ Solves
-
-| Problem | Solution |
-|---------|----------|
-| AI invisibility | Structured authority surfaces (`llms.txt`, JSON-LD, semantic markup) |
-| Citation instability | Cross-platform evaluation via LICE™ (LLM-In-Context Evaluation) |
-| Hallucinated representation | Deterministic content routing with CPR™ |
-| Unsafe AI automation | Confidence-weighted governance via CWAR™ + AGE™ |
-
-## Core Governance Frameworks
-
-### CWAR™ — Confidence-Weighted Authority Routing
-Every AI decision is scored by confidence. Above threshold → auto-execute with audit logging. Below threshold → route to human approval. No guessing.
-
-### AGE™ — Authority Governance Engine
-Enterprise RBAC, multi-tenant isolation, cryptographic audit trails, kill switches, and circuit breakers. Every action explainable. Every decision defensible.
-
-### CPR™ — Content Performance Routing
-Bayesian scoring, epidemic modeling for citation spread, causal attribution, and session persistence. When a human takes over from AI, full context is preserved.
-
-## Live Implementation
-
-- **Authority Surface**: https://411bz.ai/authority
-- **Voice Receptionist Demo**: https://411bz.ai/voice-receptionist
-- **LLM Instructions**: https://411bz.ai/llms.txt
-
-## Enterprise-Safe AI Voice Receptionist
-
-The first practical application of Answer Authority Engineering™ — an AI voice receptionist that knows when to act and when to ask.
-
-- Confidence-based call routing (not blind automation)
-- Multi-provider voice federation (Vapi, Retell, ElevenLabs, Deepgram, Cartesia)
-- Cryptographic audit trail for every call
-- HIPAA-ready, SOC 2-compatible
-- Circuit breaker and kill switch per tenant
-
-Built for dental practices, medical clinics, and any business where AI mistakes have real consequences.
-
-## How It Works
+## Architecture
 
 ```
-Incoming Call
-    → AI Voice Agent answers (confidence: 0.95)
-    → Routine request handled automatically
-    → Complex/risky request detected (confidence: 0.41)
-    → CWAR™ flags below threshold
-    → Routes to human approval
-    → Human approves/modifies
-    → CPR™ resumes with full context
-    → Immutable audit log recorded
+shared-authority-core/          ← 12 modules: canonical naming, policy, proof gate, content hash
+workers/
+  411bz-authority-engine/       ← Core: 24 D1 tables, AII computation, connectors
+  411bz-orchestrator/           ← 12-stage state machine (CPR/CWAR/AGE)
+  authority-content-forge/      ← Content generation via Cloudflare Workers AI
+  authority-solution-compiler/  ← Sole cure compiler with evidence linkage
+  authority-examiner/           ← 600-category diagnostic engine
+  411bz-operator-workbench/     ← Admin SSR UI (5 views)
+  411bz-frontend/               ← User-facing API gateway (no hardcoded hosts)
+  411bz-stripe/                 ← Payment webhooks, metering, affiliates
+  411bz-observatory/            ← Domain probe engine
+  411bz-boss-ai/                ← GitHub drift detection
+  411bz-schema-engine/          ← Schema.org JSON-LD generation
+  411bz-dashboard/              ← Client-facing dashboard
+  411bz-audit/                  ← Cron-based platform audit (every 6h)
+scripts/
+  ci-guardrails.sh              ← 8 structural enforcement checks
+  deploy-all.sh                 ← Dependency-ordered deployment
+  migrate-d1.sh                 ← D1 schema migrations
 ```
 
-## Why Governance Matters
+## Tech Stack
 
-Every other AI receptionist is a liability. They hallucinate answers, quote wrong prices, and promise things businesses can't deliver. One wrong call costs a client.
+- **Runtime**: Cloudflare Workers
+- **Framework**: Hono (no Node.js, no Next.js)
+- **Database**: Cloudflare D1 (SQLite)
+- **Storage**: Cloudflare R2
+- **AI**: Cloudflare Workers AI
+- **Inter-worker**: Cloudflare Service Bindings (no HTTP URLs)
+- **Payments**: Stripe API
+- **CI/CD**: GitHub Actions
 
-Answer Authority Engineering™ ensures AI only acts within its confidence boundaries. Everything else gets human oversight.
+## Key Design Decisions
 
-## Built By
+1. **shared-authority-core** is the single source of truth for all policy, naming, and validation.
+2. **Service bindings** replace all hardcoded `workers.dev` URLs.
+3. **Proof gate** prevents any artifact from being stored without valid content hash.
+4. **ASC (Authority Solution Compiler)** is the sole cure compiler — enforced structurally.
+5. **12-stage orchestrator** with CPR (checkpoint/pause/resume), CWAR (confidence-weighted routing), and AGE (governance engine).
+6. **600 categories** in the examiner — not 18, not 50, all 600.
 
-**411bz.ai** — Authority infrastructure for the AI age.
+## Quick Start
 
-https://411bz.ai
+```bash
+# Install dependencies
+npm install
 
-## License
+# Run guardrails
+npm run guardrails
 
-Copyright © 2025-2026 411bz.ai. All rights reserved.
-CWAR™, AGE™, CPR™, LICE™, and Answer Authority Engineering™ are trademarks of 411BZ COM INC.
+# Deploy all workers
+npm run deploy
+
+# Run D1 migrations
+npm run migrate
+```
+
+## Governance
+
+See [GOVERNANCE.md](./GOVERNANCE.md) for architecture rules and CI/CD policies.

@@ -1,0 +1,11 @@
+{
+  "name": "411bz-authority-platform",
+  "version": "2.0.0",
+  "private": true,
+  "workspaces": ["shared-authority-core", "workers/*"],
+  "scripts": {
+    "guardrails": "bash scripts/ci-guardrails.sh",
+    "deploy": "bash scripts/deploy-all.sh",
+    "migrate": "bash scripts/migrate-d1.sh"
+  }
+}
