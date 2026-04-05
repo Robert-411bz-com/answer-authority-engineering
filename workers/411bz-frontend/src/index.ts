@@ -1,7 +1,13 @@
 /**
  * 411bz-frontend — User-facing API gateway.
- * No hardcoded worker.dev URLs — all calls via service bindings.
- * Runtime config endpoint exposes safe platform metadata to clients.
+ *
+ * CRITICAL FIX (April 5 audit §7.1): All proxy handlers now materialize
+ * upstream responses with `await resp.text()` instead of passing
+ * `resp.body` (ReadableStream). Cloudflare service-binding responses
+ * can silently fail when a ReadableStream body is forwarded directly.
+ *
+ * Auth: Prefer incoming X-Authority-Key header; fall back to
+ * AUTHORITY_INTERNAL_KEY env only when the header is absent.
  */
 
 import { Hono } from 'hono';
@@ -25,12 +31,47 @@ const app = new Hono<{ Bindings: Bindings }>();
 
 app.use('/*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'PUT', 'DELETE'] }));
 
+// ── Helpers ──
+
+/** Resolve the authority key: prefer caller-supplied header, fall back to env. */
+function authorityKey(c: any): string {
+  return c.req.header('X-Authority-Key') || c.env.AUTHORITY_INTERNAL_KEY;
+}
+
+/** Safely proxy a service-binding call, materializing the body and wrapping errors. */
+async function safeProxy(
+  fetcher: Fetcher,
+  url: string,
+  init: RequestInit,
+  workerId: string,
+): Promise<Response> {
+  try {
+    const upstream = await fetcher.fetch(new Request(url, init));
+    const body = await upstream.text();          // ← materialize, never pass ReadableStream
+    return new Response(body, {
+      status: upstream.status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (err: any) {
+    const reqId = generateRequestId();
+    const envelope = wrapTruth(
+      { error: 'proxy_error', detail: err?.message || 'upstream unreachable' },
+      workerId,
+      reqId,
+    );
+    return new Response(JSON.stringify(envelope), {
+      status: 502,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+}
+
+// ── Health ──
+
 app.get('/health', (c) => c.json({ status: 'healthy', worker: c.env.WORKER_ID }));
 
-/**
- * GET /api/runtime-config — Safe platform metadata for client apps.
- * No secrets, no internal URLs — only public-facing configuration.
- */
+// ── Runtime Config ──
+
 app.get('/api/runtime-config', (c) => {
   return c.json(wrapTruth({
     platform: '411bz.ai',
@@ -54,48 +95,65 @@ app.get('/api/runtime-config', (c) => {
   }, c.env.WORKER_ID, generateRequestId()));
 });
 
-// ── Proxy to engine (all /api/v1/* routes) ──
+// ── Proxy to ENGINE (all /api/v1/* routes) ──
+
 app.all('/api/v1/*', async (c) => {
   const path = c.req.path.replace('/api', '');
   const headers: Record<string, string> = {
-    'X-Authority-Key': c.env.AUTHORITY_INTERNAL_KEY,
+    'X-Authority-Key': authorityKey(c),
     'Content-Type': c.req.header('Content-Type') || 'application/json',
   };
   const init: RequestInit = { method: c.req.method, headers };
   if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
     init.body = await c.req.text();
   }
-  const resp = await c.env.ENGINE.fetch(new Request(`http://internal${path}`, init));
-  return new Response(resp.body, { status: resp.status, headers: { 'Content-Type': 'application/json' } });
+  return safeProxy(c.env.ENGINE, `http://internal${path}`, init, c.env.WORKER_ID);
 });
 
-// ── Pipeline endpoints ──
+// ── Pipeline: start ──
+
 app.post('/api/pipeline/start', async (c) => {
   const body = await c.req.text();
-  const resp = await c.env.ORCHESTRATOR.fetch(new Request('http://internal/v1/pipeline/start', {
-    method: 'POST',
-    headers: { 'X-Authority-Key': c.env.AUTHORITY_INTERNAL_KEY, 'Content-Type': 'application/json' },
-    body,
-  }));
-  return new Response(resp.body, { status: resp.status, headers: { 'Content-Type': 'application/json' } });
+  return safeProxy(
+    c.env.ORCHESTRATOR,
+    'http://internal/v1/pipeline/start',
+    {
+      method: 'POST',
+      headers: {
+        'X-Authority-Key': authorityKey(c),
+        'Content-Type': 'application/json',
+      },
+      body,
+    },
+    c.env.WORKER_ID,
+  );
 });
+
+// ── Pipeline: status by run_id ──
 
 app.get('/api/pipeline/:run_id', async (c) => {
   const runId = c.req.param('run_id');
-  const resp = await c.env.ORCHESTRATOR.fetch(new Request(`http://internal/v1/pipeline/${runId}`, {
-    headers: { 'X-Authority-Key': c.env.AUTHORITY_INTERNAL_KEY },
-  }));
-  return new Response(resp.body, { status: resp.status, headers: { 'Content-Type': 'application/json' } });
+  return safeProxy(
+    c.env.ORCHESTRATOR,
+    `http://internal/v1/pipeline/${runId}`,
+    { headers: { 'X-Authority-Key': authorityKey(c) } },
+    c.env.WORKER_ID,
+  );
 });
 
-// ── Pipeline list ──
+// ── Pipeline: list ──
+
 app.get('/api/pipeline', async (c) => {
   const tenantId = c.req.query('tenant_id');
-  const url = tenantId ? `http://internal/v1/pipeline?tenant_id=${tenantId}` : 'http://internal/v1/pipeline';
-  const resp = await c.env.ORCHESTRATOR.fetch(new Request(url, {
-    headers: { 'X-Authority-Key': c.env.AUTHORITY_INTERNAL_KEY },
-  }));
-  return new Response(resp.body, { status: resp.status, headers: { 'Content-Type': 'application/json' } });
+  const url = tenantId
+    ? `http://internal/v1/pipeline?tenant_id=${tenantId}`
+    : 'http://internal/v1/pipeline';
+  return safeProxy(
+    c.env.ORCHESTRATOR,
+    url,
+    { headers: { 'X-Authority-Key': authorityKey(c) } },
+    c.env.WORKER_ID,
+  );
 });
 
 export default app;

@@ -50,10 +50,27 @@ app.get('/v1/tenants/:tenant_id', async (c) => {
 app.post('/v1/tenants', async (c) => {
   const body = await c.req.json<{ tenant_id: string; domain: string; business_name: string; business_type?: string; plan?: string }>();
   assertTenantId(body.tenant_id);
-  await c.env.DB.prepare(
-    'INSERT INTO tenants (tenant_id, domain, business_name, business_type, plan) VALUES (?, ?, ?, ?, ?)'
-  ).bind(body.tenant_id, body.domain, body.business_name, body.business_type || 'Organization', body.plan || 'trial').run();
-  return c.json({ created: body.tenant_id }, 201);
+  try {
+    await c.env.DB.prepare(
+      'INSERT INTO tenants (tenant_id, domain, business_name, business_type, plan) VALUES (?, ?, ?, ?, ?)'
+    ).bind(body.tenant_id, body.domain, body.business_name, body.business_type || 'Organization', body.plan || 'trial').run();
+    return c.json(wrapTruth(
+      { tenant_id: body.tenant_id, domain: body.domain, plan: body.plan || 'trial' },
+      c.env.WORKER_ID, generateRequestId()
+    ), 201);
+  } catch (err: any) {
+    const msg = err?.message || '';
+    if (msg.includes('UNIQUE') || msg.includes('constraint')) {
+      return c.json(wrapTruth(
+        { error: 'tenant_exists', detail: 'tenant_id or domain already registered' },
+        c.env.WORKER_ID, generateRequestId()
+      ), 409);
+    }
+    return c.json(wrapTruth(
+      { error: 'insert_failed', detail: 'unable to create tenant' },
+      c.env.WORKER_ID, generateRequestId()
+    ), 500);
+  }
 });
 
 // ── Scores & AII ──
