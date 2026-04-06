@@ -1,0 +1,19 @@
+name = "authority-content-forge"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+account_id = "0a99972e989785e2bf99eb4bef63dd21"
+
+[vars]
+WORKER_ID = "authority-content-forge"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "forge-production"
+database_id = "e41ec010-c19d-4f97-bf7d-b6332ae5a84c"
+
+[[services]]
+binding = "ENGINE"
+service = "411bz-authority-engine"
+
+[ai]
+binding = "AI"

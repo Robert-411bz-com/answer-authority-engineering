@@ -1,0 +1,10 @@
+# 411bz.ai Environment Variables — copy to .dev.vars, NEVER commit .dev.vars
+AUTHORITY_INTERNAL_KEY=your-internal-key-here
+OPERATOR_KEY=your-operator-key-here
+STRIPE_SECRET_KEY=sk_live_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+CF_AI_GATEWAY_TOKEN=your-cf-ai-token
+GITHUB_APP_ID=your-app-id
+GITHUB_APP_PRIVATE_KEY=your-private-key
+GHL_API_KEY=your-ghl-api-key
+GHL_LOCATION_ID=your-location-id
