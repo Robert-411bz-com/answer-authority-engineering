@@ -18,3 +18,7 @@ service = "411bz-observatory"
 [[services]]
 binding = "BOSS_AI"
 service = "411bz-boss-ai"
+
+[[services]]
+binding = "STRIPE"
+service = "411bz-stripe"
