@@ -48,28 +48,93 @@ app.get('/v1/tenants/:tenant_id', async (c) => {
 });
 
 app.post('/v1/tenants', async (c) => {
-  const body = await c.req.json<{ tenant_id: string; domain: string; business_name: string; business_type?: string; plan?: string }>();
-  assertTenantId(body.tenant_id);
   try {
+    const body = await c.req.json<{ tenant_id: string; domain: string; business_name: string; business_type?: string; plan?: string }>();
+    assertTenantId(body.tenant_id);
     await c.env.DB.prepare(
       'INSERT INTO tenants (tenant_id, domain, business_name, business_type, plan) VALUES (?, ?, ?, ?, ?)'
     ).bind(body.tenant_id, body.domain, body.business_name, body.business_type || 'Organization', body.plan || 'trial').run();
-    return c.json(wrapTruth(
-      { tenant_id: body.tenant_id, domain: body.domain, plan: body.plan || 'trial' },
-      c.env.WORKER_ID, generateRequestId()
-    ), 201);
-  } catch (err: any) {
-    const msg = err?.message || '';
-    if (msg.includes('UNIQUE') || msg.includes('constraint')) {
-      return c.json(wrapTruth(
-        { error: 'tenant_exists', detail: 'tenant_id or domain already registered' },
-        c.env.WORKER_ID, generateRequestId()
-      ), 409);
+    return c.json(
+      wrapTruth({ tenant_id: body.tenant_id, domain: body.domain, created: true }, c.env.WORKER_ID, generateRequestId()),
+      201
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/UNIQUE constraint|SQLITE_CONSTRAINT|constraint/i.test(msg)) {
+      const conflict = /domain/i.test(msg) ? 'domain' : 'tenant_id';
+      return c.json(
+        { error: 'tenant_conflict', conflict, detail: `A tenant with this ${conflict} already exists` },
+        409
+      );
     }
-    return c.json(wrapTruth(
-      { error: 'insert_failed', detail: 'unable to create tenant' },
-      c.env.WORKER_ID, generateRequestId()
-    ), 500);
+    console.error('POST /v1/tenants error:', msg);
+    return c.json({ error: 'insert_failed', detail: msg }, 500);
+  }
+});
+
+// ── Subscriptions (D1; proxied by frontend as POST /api/v1/subscriptions) ──
+app.get('/v1/subscriptions/:tenant_id', async (c) => {
+  const tid = c.req.param('tenant_id');
+  assertTenantId(tid);
+  const row = await c.env.DB.prepare('SELECT * FROM subscriptions WHERE tenant_id = ?').bind(tid).first();
+  if (!row) return c.json({ error: 'subscription_not_found' }, 404);
+  return c.json(wrapTruth(row, c.env.WORKER_ID, generateRequestId()));
+});
+
+app.post('/v1/subscriptions', async (c) => {
+  try {
+    const body = await c.req.json<{
+      tenant_id: string;
+      plan: string;
+      status?: string;
+      current_period_end?: string;
+      stripe_subscription_id?: string;
+      stripe_customer_id?: string;
+    }>();
+    assertTenantId(body.tenant_id);
+    const tid = body.tenant_id;
+    const existingTenant = await c.env.DB.prepare('SELECT tenant_id FROM tenants WHERE tenant_id = ?').bind(tid).first();
+    if (!existingTenant) {
+      return c.json({ error: 'tenant_not_found' }, 404);
+    }
+    const rowId = `sub_${tid}`;
+    const plan = body.plan;
+    const status = body.status ?? 'active';
+    const stripeSub = body.stripe_subscription_id ?? null;
+    const stripeCust = body.stripe_customer_id ?? null;
+    const periodEnd = body.current_period_end ?? null;
+
+    await c.env.DB.prepare(
+      `INSERT INTO subscriptions (id, tenant_id, plan, stripe_subscription_id, stripe_customer_id, status, current_period_end, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(tenant_id) DO UPDATE SET
+         plan = excluded.plan,
+         stripe_subscription_id = excluded.stripe_subscription_id,
+         stripe_customer_id = excluded.stripe_customer_id,
+         status = excluded.status,
+         current_period_end = excluded.current_period_end,
+         updated_at = datetime('now')`
+    ).bind(rowId, tid, plan, stripeSub, stripeCust, status, periodEnd).run();
+
+    return c.json(
+      wrapTruth(
+        {
+          tenant_id: tid,
+          plan,
+          status,
+          current_period_end: periodEnd,
+          stripe_subscription_id: stripeSub,
+          stripe_customer_id: stripeCust,
+        },
+        c.env.WORKER_ID,
+        generateRequestId()
+      ),
+      201
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('POST /v1/subscriptions error:', msg);
+    return c.json({ error: 'subscription_upsert_failed', detail: msg }, 500);
   }
 });
 
@@ -387,6 +452,14 @@ app.get('/v1/audit-log', async (c) => {
 
 // ── Affiliates ──
 app.get('/v1/affiliates', async (c) => {
+  const tenantFilter = c.req.query('tenant_id');
+  if (tenantFilter) {
+    assertTenantId(tenantFilter);
+    const rows = await c.env.DB.prepare(
+      'SELECT * FROM affiliates WHERE tenant_id = ? ORDER BY created_at DESC'
+    ).bind(tenantFilter).all();
+    return c.json(wrapTruth(rows.results ?? [], c.env.WORKER_ID, generateRequestId()));
+  }
   const rows = await c.env.DB.prepare('SELECT * FROM affiliates ORDER BY created_at DESC').all();
   return c.json(wrapTruth(rows.results, c.env.WORKER_ID, generateRequestId()));
 });
@@ -405,6 +478,14 @@ app.get('/v1/tenants/:tenant_id/score-history', async (c) => {
   return c.json(wrapTruth(rows.results, c.env.WORKER_ID, generateRequestId()));
 });
 
+// ── Scorecards (global list — operator / E2E; prefer per-tenant route below for scoping) ──
+app.get('/v1/scorecards', async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT * FROM scores WHERE score_type = 'scorecard' ORDER BY computed_at DESC LIMIT 100"
+  ).all();
+  return c.json(wrapTruth(rows.results ?? [], c.env.WORKER_ID, generateRequestId()));
+});
+
 // ── Scorecards (query published scorecards) ──
 app.get('/v1/tenants/:tenant_id/scorecards', async (c) => {
   const tid = c.req.param('tenant_id');
@@ -413,6 +494,138 @@ app.get('/v1/tenants/:tenant_id/scorecards', async (c) => {
     "SELECT * FROM scores WHERE tenant_id = ? AND score_type = 'scorecard' ORDER BY computed_at DESC"
   ).bind(tid).all();
   return c.json(wrapTruth(rows.results, c.env.WORKER_ID, generateRequestId()));
+});
+
+// ── Subscriptions (called by 411bz-stripe webhook handlers) ──
+
+app.get('/v1/subscriptions/:tenant_id', async (c) => {
+  const tid = c.req.param('tenant_id');
+  assertTenantId(tid);
+  const row = await c.env.DB.prepare('SELECT * FROM subscriptions WHERE tenant_id = ?').bind(tid).first();
+  if (!row) return c.json({ error: 'subscription_not_found' }, 404);
+  return c.json(wrapTruth(row, c.env.WORKER_ID, generateRequestId()));
+});
+
+app.post('/v1/subscriptions', async (c) => {
+  const body = await c.req.json<{
+    tenant_id: string;
+    plan: string;
+    stripe_subscription_id?: string;
+    stripe_customer_id?: string;
+    status?: string;
+    current_period_end?: string | null;
+    max_domains?: number;
+  }>();
+  assertTenantId(body.tenant_id);
+
+  const maxDomains =
+    body.max_domains ?? (body.plan === 'pro' ? 10 : body.plan === 'growth' ? 5 : 1);
+
+  await c.env.DB
+    .prepare(
+      `
+    INSERT INTO subscriptions (id, tenant_id, plan, stripe_subscription_id, stripe_customer_id, status, current_period_end, max_domains, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(tenant_id) DO UPDATE SET
+      plan = excluded.plan,
+      stripe_subscription_id = excluded.stripe_subscription_id,
+      stripe_customer_id = excluded.stripe_customer_id,
+      status = excluded.status,
+      current_period_end = excluded.current_period_end,
+      max_domains = excluded.max_domains,
+      updated_at = datetime('now')
+  `,
+    )
+    .bind(
+      `sub_${body.tenant_id}_${Date.now().toString(36)}`,
+      body.tenant_id,
+      body.plan,
+      body.stripe_subscription_id || null,
+      body.stripe_customer_id || null,
+      body.status || 'active',
+      body.current_period_end || null,
+      maxDomains,
+    )
+    .run();
+
+  await logAudit(
+    c.env.DB,
+    body.tenant_id,
+    'stripe',
+    'subscription_upserted',
+    'subscription',
+    body.stripe_subscription_id || body.tenant_id,
+  );
+  return c.json(
+    wrapTruth(
+      { tenant_id: body.tenant_id, plan: body.plan, status: body.status || 'active' },
+      c.env.WORKER_ID,
+      generateRequestId(),
+    ),
+    200,
+  );
+});
+
+app.post('/v1/tenants/:tenant_id/plan', async (c) => {
+  const tid = c.req.param('tenant_id');
+  assertTenantId(tid);
+  const body = await c.req.json<{ plan: string }>();
+  const validPlans = ['trial', 'starter', 'growth', 'pro'];
+  if (!validPlans.includes(body.plan)) {
+    return c.json({ error: 'invalid_plan', detail: `Must be one of: ${validPlans.join(', ')}` }, 400);
+  }
+  await c.env.DB
+    .prepare("UPDATE tenants SET plan = ?, updated_at = datetime('now') WHERE tenant_id = ?")
+    .bind(body.plan, tid)
+    .run();
+  await logAudit(c.env.DB, tid, 'stripe', 'plan_updated', 'tenant', body.plan);
+  return c.json(wrapTruth({ tenant_id: tid, plan: body.plan }, c.env.WORKER_ID, generateRequestId()));
+});
+
+app.post('/v1/commissions', async (c) => {
+  const body = await c.req.json<{
+    affiliate_id: string;
+    tenant_id: string;
+    invoice_id: string;
+    amount_cents: number;
+    commission_cents: number;
+    commission_rate: number;
+  }>();
+  const commId = `comm_${body.tenant_id.substring(0, 8)}_${Date.now().toString(36)}`;
+  try {
+    await c.env.DB
+      .prepare(
+        'INSERT INTO commissions (commission_id, affiliate_id, tenant_id, invoice_id, amount_cents, commission_cents, commission_rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      )
+      .bind(
+        commId,
+        body.affiliate_id,
+        body.tenant_id,
+        body.invoice_id,
+        body.amount_cents,
+        body.commission_cents,
+        body.commission_rate,
+      )
+      .run();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('Commission persist error:', msg);
+    return c.json({ error: 'commission_failed', detail: msg }, 500);
+  }
+  await logAudit(c.env.DB, body.tenant_id, 'stripe', 'commission_created', 'commission', commId);
+  return c.json({ commission_id: commId }, 201);
+});
+
+app.get('/v1/plan-features/:plan', async (c) => {
+  const plan = c.req.param('plan');
+  const rows = await c.env.DB.prepare('SELECT feature FROM plan_features WHERE plan = ?').bind(plan).all();
+  return c.json(
+    wrapTruth(
+      { plan, features: rows.results.map((r) => r.feature as string) },
+      c.env.WORKER_ID,
+      generateRequestId(),
+    ),
+  );
 });
 
 // ── Audit log helper ──
