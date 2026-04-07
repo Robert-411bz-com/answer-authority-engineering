@@ -222,6 +222,31 @@ app.post('/api/v1/tenants', async (c) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// SUBSCRIPTION MANAGEMENT (no plan check — needed to create/update subscriptions)
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.post('/api/v1/subscriptions', async (c) => {
+  try {
+    const key = authorityKey(c);
+    if (!key) return c.json({ error: 'missing_authority_key' }, 401);
+    const reqBody = await c.req.text();
+    const resp = await c.env.ENGINE.fetch(new Request('http://internal/v1/subscriptions', {
+      method: 'POST',
+      headers: { 'X-Authority-Key': key, 'Content-Type': 'application/json' },
+      body: reqBody,
+    }));
+    const body = await resp.text();
+    return new Response(body, {
+      status: resp.status,
+      headers: { 'Content-Type': resp.headers.get('Content-Type') || 'application/json' },
+    });
+  } catch (err: any) {
+    console.error('Proxy POST /api/v1/subscriptions error:', err.message, err.stack);
+    return c.json({ error: 'proxy_error', detail: err.message }, 502);
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // PLAN-GATED ROUTES — 402 middleware applied
 // ══════════════════════════════════════════════════════════════════════════════
 
