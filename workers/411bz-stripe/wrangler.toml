@@ -1,9 +1,47 @@
+# 411bz-stripe — CANONICAL wrangler.toml
+#
+# D1 binding name: DB (not OBSERVATORY_DB — must match frontend)
+
 name = "411bz-stripe"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 account_id = "0a99972e989785e2bf99eb4bef63dd21"
+workers_dev = true
+
+# ── Environment variables ──
+
 [vars]
+ENVIRONMENT = "production"
 WORKER_ID = "411bz-stripe"
+
+# ── Service bindings ──
+
 [[services]]
 binding = "ENGINE"
 service = "411bz-authority-engine"
+
+[[services]]
+binding = "OBSERVATORY"
+service = "411bz-observatory"
+
+[[services]]
+binding = "ORCHESTRATOR"
+service = "411bz-orchestrator"
+
+# ── D1 database (same as frontend — shared auth tables) ──
+
+[[d1_databases]]
+binding = "DB"
+database_name = "observatory-production"
+database_id = "762433fd-4dbe-444d-b41c-fdf7f54b5595"
+
+# ── Observability ──
+
+[observability.logs]
+enabled = true
+
+# ── Secrets (set via wrangler secret put) ──
+# STRIPE_SECRET_KEY       — Stripe API secret key
+# STRIPE_WEBHOOK_SECRET   — Stripe webhook signing secret (whsec_...)
+# STRIPE_PUBLISHABLE_KEY  — Stripe publishable key
+# AUTHORITY_INTERNAL_KEY  — service-to-service auth key

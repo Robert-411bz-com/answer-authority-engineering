@@ -4,12 +4,17 @@
 
 import { Hono } from 'hono';
 import { POLICY_DEFAULTS, CANONICAL_WORKERS } from 'shared-authority-core';
+import { createCheckoutAuthHandoff } from './checkout-auth-handoff';
 
 type Bindings = {
   ENGINE: Fetcher;
+  OBSERVATORY: Fetcher;
+  ORCHESTRATOR: Fetcher;
+  DB: D1Database;
   WORKER_ID: string;
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
+  STRIPE_PUBLISHABLE_KEY: string;
   AUTHORITY_INTERNAL_KEY: string;
 };
 
@@ -55,6 +60,14 @@ app.post('/v1/validate-promo', async (c) => {
 
 async function handleCheckoutComplete(env: Bindings, session: Record<string, unknown>): Promise<void> {
   // Process new subscription, apply promo codes, set up affiliate tracking
+  const tenantId = (session.metadata as Record<string, string>)?.tenant_id || (session.client_reference_id as string) || '';
+
+  // --- Auth handoff: create auth code keyed by Stripe session ID ---
+  // This lets the frontend exchange ?session_id={CHECKOUT_SESSION_ID} for an auth cookie.
+  // Non-fatal: if this fails the user can still log in via magic link.
+  if (tenantId) {
+    await createCheckoutAuthHandoff(env, session as any, tenantId);
+  }
 }
 
 async function handleSubscriptionUpdate(env: Bindings, sub: Record<string, unknown>): Promise<void> {
