@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Guard first: refuse unless the operator accepts overwriting same-named 411bz-ai workers.
+# Keep DEPLOY_WORKERS in sync with the `cd` + deploy steps below (scripts/test-deploy-guards.sh checks it).
+DEPLOY_WORKERS=("411bz-stripe" "411bz-frontend")
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/production-guard.sh"
+require_production_overwrite_ack "scripts/deploy-v4.sh" "${DEPLOY_WORKERS[@]}"
+
 # ─────────────────────────────────────────────────────────────
 # 411bz.ai Phase 4 Auth Release — One-Shot Deploy Script
 # Commit: 2c0e73c on main (answer-authority-engineering)

@@ -4,6 +4,7 @@
  */
 
 import { computeContentHash, createEvidenceId } from 'shared-authority-core';
+import { storeEvidenceContent } from '../evidence-content.js';
 
 export interface ConnectorResult {
   records_fetched: number;
@@ -62,6 +63,7 @@ async function runLlmsTxtConnector(db: D1Database, tenantId: string, config: Rec
     await db.prepare(
       'INSERT INTO evidence (evidence_id, tenant_id, source_type, source_url, content_hash, confidence) VALUES (?, ?, ?, ?, ?, ?)'
     ).bind(eid, tenantId, 'llms_txt', `https://${domain}/llms.txt`, hash, 0.9).run();
+    await storeEvidenceContent(db, eid, tenantId, content, hash);
     return { records_fetched: 1, evidence_ids: [eid], errors: [] };
   } catch (e) {
     return { records_fetched: 0, evidence_ids: [], errors: [(e as Error).message] };

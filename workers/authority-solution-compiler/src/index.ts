@@ -35,7 +35,11 @@ app.post('/v1/compile', async (c) => {
     diagnoses: Array<{
       diagnosis_id: string; category: string; severity: string;
       description: string; evidence_ids: string[];
+      /** Fabric point-A winner; one of CureAction['action_type'] or 'none'. */
+      cure_family?: string;
     }>;
+    /** Only when true does cure_family choose the action type. Fabric sets it in gate mode only. */
+    steer_cure_family?: boolean;
   }>();
   assertTenantId(body.tenant_id);
 
@@ -51,19 +55,28 @@ app.post('/v1/compile', async (c) => {
 
   const cures: CureAction[] = [];
   const errors: string[] = [];
+  const steer = body.steer_cure_family === true;
+  let steered = 0;
+  let skippedNone = 0;
 
   for (const diag of body.diagnoses) {
     if (!diag.evidence_ids || diag.evidence_ids.length === 0) {
       errors.push(`Diagnosis ${diag.diagnosis_id} has no evidence — cannot compile cure`);
       continue;
     }
+    if (steer && diag.cure_family === 'none') {
+      skippedNone++;
+      continue;
+    }
+    const steeredAction = steer ? asActionType(diag.cure_family) : null;
+    if (steeredAction) steered++;
 
     const cure: CureAction = {
       cure_id: createCureId(body.tenant_id, diag.category),
       tenant_id: body.tenant_id,
       diagnosis_id: diag.diagnosis_id,
       category: diag.category,
-      action_type: mapSeverityToAction(diag.severity),
+      action_type: steeredAction ?? mapSeverityToAction(diag.severity),
       target: diag.category,
       instructions: generateInstructions(diag),
       evidence_ids: diag.evidence_ids,
@@ -91,10 +104,20 @@ app.post('/v1/compile', async (c) => {
   }
 
   return c.json(wrapTruth(
-    { compiled: cures.length, errors: errors.length, cure_ids: cures.map(cu => cu.cure_id), error_details: errors },
+    {
+      compiled: cures.length, errors: errors.length, cure_ids: cures.map(cu => cu.cure_id), error_details: errors,
+      steered, skipped_none: skippedNone,
+    },
     c.env.WORKER_ID, generateRequestId()
   ));
 });
+
+const ACTION_TYPES: readonly CureAction['action_type'][] = ['create', 'update', 'optimize', 'remove', 'restructure'];
+
+/** A valid steering value, or null so the severity mapping decides. */
+function asActionType(family: string | undefined): CureAction['action_type'] | null {
+  return family && (ACTION_TYPES as readonly string[]).includes(family) ? family as CureAction['action_type'] : null;
+}
 
 function mapSeverityToAction(severity: string): CureAction['action_type'] {
   switch (severity) {

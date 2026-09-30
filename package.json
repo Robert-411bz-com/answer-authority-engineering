@@ -6,6 +6,7 @@
   "scripts": {
     "guardrails": "bash scripts/ci-guardrails.sh",
     "deploy": "bash scripts/deploy-all.sh",
-    "migrate": "bash scripts/migrate-d1.sh"
+    "migrate": "bash scripts/migrate-d1.sh",
+    "test:deploy-guards": "bash scripts/test-deploy-guards.sh"
   }
 }

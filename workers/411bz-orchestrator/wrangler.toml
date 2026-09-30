@@ -5,6 +5,11 @@ account_id = "0a99972e989785e2bf99eb4bef63dd21"
 
 [vars]
 WORKER_ID = "411bz-orchestrator"
+# Fabric decision gate: off | shadow | gate. shadow writes slips and changes no decision.
+FABRIC_MODE = "shadow"
+# Pinned model id; every slip logs the versioned id TypeSafe reports back.
+TYPESAFE_MODEL = "jev-latest"
+# TYPESAFE_API_KEY is a secret: set it with `wrangler secret put TYPESAFE_API_KEY` (operator-local).
 
 [[d1_databases]]
 binding = "DB"
