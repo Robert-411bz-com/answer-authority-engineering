@@ -112,6 +112,11 @@ function toDistribution(inst: QuestionInstance, wire: WireAnswer, tolerance: num
   }
   const probs = wire.probabilities;
   if (!probs || typeof probs !== 'object') throw new Error(`${inst.def.type} answer has no probabilities`);
+  const criteria = inst.def.criteria;
+  if (inst.def.type === 'choice' && criteria && !Array.isArray(criteria)) {
+    const undeclared = Object.keys(probs).filter(k => !Object.prototype.hasOwnProperty.call(criteria, k));
+    if (undeclared.length > 0) throw new Error(`choice answer names options the question never offered: ${undeclared.join(', ')}`);
+  }
   return fromProbabilities(probs, tolerance);
 }
 

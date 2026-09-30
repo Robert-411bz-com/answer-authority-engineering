@@ -77,6 +77,15 @@ describe('evidence content', () => {
     expect(db.query('SELECT COUNT(*) AS n FROM evidence_content')[0]!.n).toBe(0);
   });
 
+  it('D4: evidence ingestion still succeeds when the text store is unavailable (schema not yet applied)', async () => {
+    const { db, post, list } = await setup();
+    db.raw.run('DROP TABLE evidence_content');
+    const res = await post('tenant_fixture_01', 'fixture_ text');
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { content_stored: boolean }).content_stored).toBe(false);
+    expect(await list('tenant_fixture_01', false)).toHaveLength(1);
+  });
+
   it('text-bearing rows come first', async () => {
     const { db, post, list } = await setup();
     await post('tenant_fixture_01', 'fixture_ with text');

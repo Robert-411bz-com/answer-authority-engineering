@@ -119,13 +119,23 @@ describe('ship_verdict', () => {
 });
 
 describe('lanes', () => {
-  async function ctxWith(log: Call[]): Promise<FabricContext> {
+  async function ctxWith(log: Call[], answers: Parameters<typeof makeJev>[2] = {}): Promise<FabricContext> {
     const db = await makeDb();
     return {
       db: db.d1, runId: 'run_fixture_lanes', policy, localHead: INERT_LOCAL_HEAD, calibration: new Map(),
-      jev: { apiKey: 'fixture_key', model: PINNED_MODEL, timeoutMs: 1000, fetch: makeJev(log, { n: 0 }), probabilitySumTolerance: 0.01 },
+      jev: { apiKey: 'fixture_key', model: PINNED_MODEL, timeoutMs: 1000, fetch: makeJev(log, { n: 0 }, answers), probabilitySumTolerance: 0.01 },
     };
   }
+
+  it('D1: a Choice answer with an option the question never offered is rejected as malformed, not gated', async () => {
+    const log: Call[] = [];
+    const ctx = await ctxWith(log, { answers: { deploy_route: choice({ ship_it: 0.95, pause_for_review: 0.04, reject: 0.01 }) } });
+    const out = await evaluatePoint(ctx, 'deploy', { v: 1 }, [instance(QUESTIONS.deploy_route)]);
+    const a = [...out.values()][0]!;
+    expect(a.dist).toBeNull();
+    expect(a.cwar).toBe('pause_for_review');
+    expect(a.error).toContain('ship_it');
+  });
 
   it('3. second evaluate of the same question and content hash performs no fetch and writes lane = replay', async () => {
     const log: Call[] = [];
@@ -313,6 +323,17 @@ describe('pipeline', () => {
     expect(status(db.query, runId).status).toBe('completed');
     const row = db.query("SELECT decision FROM cwar_decisions WHERE run_id = ? AND stage = 'evidence_graph'", runId)[0]!;
     expect(row.decision).toBe('pause_for_review');
+  });
+
+  it('D2: gate mode does not steer ASC with a cure_family whose own CWAR is pause_for_review', async () => {
+    const flat = choice({ create: 0.35, update: 0.3, optimize: 0.15, remove: 0.1, restructure: 0.05, none: 0.05 });
+    const { env, deps, log, runId } = await makeEnv({ mode: 'gate', jev: { answers: { cure_family: flat } } });
+    await executePipeline(env, runId, 'tenant_fixture_01', undefined, deps);
+    const compile = log.find(c => c.target === 'COMPILER')!;
+    const body = compile.body as { steer_cure_family: boolean; diagnoses: Array<{ cure_family?: string }> };
+    expect(body.steer_cure_family).toBe(true);
+    expect(body.diagnoses).toHaveLength(2);
+    for (const d of body.diagnoses) expect(d).not.toHaveProperty('cure_family');
   });
 
   it('gate: cure_family none drops the diagnosis from compile', async () => {

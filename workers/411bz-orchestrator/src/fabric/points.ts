@@ -96,14 +96,18 @@ export async function pointA(
  * Attach the winning cure_family to each diagnosis in the compile body. ASC uses it as
  * the cure's action type only when the body also carries steer_cure_family: true, which
  * the pipeline sends in gate mode only. In gate mode a `none` winner also drops the
- * diagnosis here; in shadow the diagnosis list and ASC's output are unchanged.
+ * diagnosis here; in shadow the diagnosis list and ASC's output are unchanged. In gate
+ * mode a winner whose own CWAR is not proceed (too flat to act on) is not attached, so
+ * ASC falls back to its severity mapping for that diagnosis.
  */
 export function steerCompile(diagnoses: DiagnosisRow[], a: PointAResult, gate: boolean): Array<DiagnosisRow & { cure_family?: string }> {
   const out: Array<DiagnosisRow & { cure_family?: string }> = [];
   for (const d of diagnoses) {
-    const winner = a.cureFamily.get(d.diagnosis_id)?.dist?.winner;
+    const answer = a.cureFamily.get(d.diagnosis_id);
+    const winner = answer?.dist?.winner;
     if (gate && winner === 'none') continue;
-    out.push(winner ? { ...d, cure_family: winner } : d);
+    const actionable = !gate || answer?.cwar === 'proceed';
+    out.push(winner && actionable ? { ...d, cure_family: winner } : d);
   }
   return out;
 }

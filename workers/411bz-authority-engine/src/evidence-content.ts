@@ -6,16 +6,25 @@
 
 import { computeContentHash, POLICY_DEFAULTS } from 'shared-authority-core';
 
-/** Store the hashed bytes. Returns false (and stores nothing) when the text exceeds the cap. */
+/**
+ * Store the hashed bytes. Returns false (and stores nothing) when the text exceeds the cap
+ * or the write fails (e.g. the table is not migrated yet). Never throws: the evidence row
+ * is the record of truth, and ingestion must not fail because the text store did.
+ */
 export async function storeEvidenceContent(
   db: D1Database, evidenceId: string, tenantId: string, content: string, contentHash: string,
   maxBytes: number = POLICY_DEFAULTS.EVIDENCE_CONTENT_MAX_BYTES,
 ): Promise<boolean> {
   if (new TextEncoder().encode(content).byteLength > maxBytes) return false;
-  await db.prepare(
-    'INSERT OR IGNORE INTO evidence_content (evidence_id, tenant_id, content, content_hash) VALUES (?, ?, ?, ?)'
-  ).bind(evidenceId, tenantId, content, contentHash).run();
-  return true;
+  try {
+    await db.prepare(
+      'INSERT OR IGNORE INTO evidence_content (evidence_id, tenant_id, content, content_hash) VALUES (?, ?, ?, ?)'
+    ).bind(evidenceId, tenantId, content, contentHash).run();
+    return true;
+  } catch (err) {
+    console.error('evidence_content write failed; evidence row kept without text', err);
+    return false;
+  }
 }
 
 export interface EvidenceWithContent extends Record<string, unknown> {
