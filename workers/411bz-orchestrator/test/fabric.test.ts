@@ -276,8 +276,18 @@ describe('pipeline', () => {
     expect(deployed(log)).toBe(true);
   });
 
-  it('gate: today\'s forge path (cure_refs: []) fails the proof gate, so gate mode cannot deploy yet', async () => {
-    const { env, deps, log, db, runId } = await makeEnv({ mode: 'gate', scenario: { cureRefs: [] } });
+  it('forge receives the cure ids ASC compiled, and the proof gate passes on them', async () => {
+    const { env, deps, log, db, runId } = await makeEnv({ mode: 'shadow' });
+    await executePipeline(env, runId, 'tenant_fixture_01', undefined, deps);
+    const forge = log.find(c => c.target === 'FORGE')!;
+    expect((forge.body as { cure_refs: string[] }).cure_refs).toEqual(['cure_fixture_1', 'cure_fixture_2']);
+    const proof = slips(db.query, runId).find(r => r.question_id === 'proof_gate')!;
+    expect(proof.cwar).toBe('proceed');
+    expect(proof.primary_p).toBe(1);
+  });
+
+  it('gate: a run where ASC compiled no cures still fails the proof gate and cannot deploy', async () => {
+    const { env, deps, log, db, runId } = await makeEnv({ mode: 'gate', scenario: { compiled: 0 } });
     await executePipeline(env, runId, 'tenant_fixture_01', undefined, deps);
     expect(status(db.query, runId).status).toBe('failed');
     expect(deployed(log)).toBe(false);
@@ -286,12 +296,23 @@ describe('pipeline', () => {
     expect(String(proof.detail_json)).toContain('No cure references');
   });
 
+  it('shadow: compiling no cures pauses exactly where off does; Fabric changes nothing', async () => {
+    const off = await makeEnv({ mode: 'off', scenario: { compiled: 0 } });
+    await executePipeline(off.env, off.runId, 'tenant_fixture_01', undefined, off.deps);
+    const shadow = await makeEnv({ mode: 'shadow', scenario: { compiled: 0 } });
+    await executePipeline(shadow.env, shadow.runId, 'tenant_fixture_01', undefined, shadow.deps);
+    // The count heuristic pauses compile_cures in both modes, so point C is never reached.
+    expect(status(shadow.db.query, shadow.runId)).toEqual(status(off.db.query, off.runId));
+    expect(status(shadow.db.query, shadow.runId)).toMatchObject({ status: 'paused', current_stage: 'compile_cures' });
+    expect(slips(shadow.db.query, shadow.runId).some(r => r.question_id === 'proof_gate')).toBe(false);
+  });
+
   it('gate: count-heuristic stage confidence is telemetry and cannot pause the run', async () => {
-    const { env, deps, db, runId } = await makeEnv({ mode: 'gate', scenario: { compiled: 0 } });
+    const { env, deps, db, runId } = await makeEnv({ mode: 'gate', scenario: { evidenceTotal: 0 } });
     await executePipeline(env, runId, 'tenant_fixture_01', undefined, deps);
     expect(status(db.query, runId).status).toBe('completed');
-    const compileRow = db.query("SELECT decision FROM cwar_decisions WHERE run_id = ? AND stage = 'compile_cures'", runId)[0]!;
-    expect(compileRow.decision).toBe('pause_for_review');
+    const row = db.query("SELECT decision FROM cwar_decisions WHERE run_id = ? AND stage = 'evidence_graph'", runId)[0]!;
+    expect(row.decision).toBe('pause_for_review');
   });
 
   it('gate: cure_family none drops the diagnosis from compile', async () => {

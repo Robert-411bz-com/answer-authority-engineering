@@ -461,13 +461,20 @@ async function executeStage(
     }
 
     case 'forge_content': {
+      // The cures ASC compiled this run. They ride on the artifact so the deployment
+      // governor's cure_refs_present check can pass. A run resumed here has no compile
+      // output in memory and sends [], which the proof gate then reports honestly.
+      const compiled = stageOutputs['compile_cures'] as { cure_ids?: unknown } | undefined;
+      const cureRefs = Array.isArray(compiled?.cure_ids)
+        ? compiled.cure_ids.filter((id): id is string => typeof id === 'string')
+        : [];
       const resp = await env.FORGE.fetch(new Request('http://internal/v1/generate', {
         method: 'POST', headers,
         body: JSON.stringify({
           tenant_id: tenantId,
           kind: 'cure_action',
           topic: `Authority content for pipeline run ${runId}`,
-          cure_refs: [],
+          cure_refs: cureRefs,
         }),
       }));
       const data = resp.ok ? await resp.json() : null;

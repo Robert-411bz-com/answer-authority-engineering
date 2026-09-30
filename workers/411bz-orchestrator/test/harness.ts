@@ -20,11 +20,12 @@ export const HASH_A = 'a'.repeat(64);
 
 export interface Scenario {
   compiled?: number;
-  cureRefs?: string[];
   artifactContent?: string;
   dryRunVerdict?: string;
   /** false: the engine has no hash-verified text for any evidence row. */
   evidenceText?: boolean;
+  /** Evidence row count the engine reports (drives the evidence_graph heuristic). */
+  evidenceTotal?: number;
 }
 
 const DIAGNOSES = [
@@ -38,6 +39,8 @@ function json(data: unknown, status = 200) {
 
 export function makeServices(log: Call[], seq: { n: number }, sc: Scenario = {}) {
   let aiiCalls = 0;
+  // Faithful round trip: the artifact carries exactly the cure_refs forge was sent.
+  let forgedCureRefs: unknown = [];
   const svc = (target: string, handler: (method: string, path: string, body: unknown, url: URL) => Response) => ({
     fetch: async (req: Request) => {
       const url = new URL(req.url);
@@ -57,11 +60,11 @@ export function makeServices(log: Call[], seq: { n: number }, sc: Scenario = {})
       if (p.endsWith('/evidence')) {
         const row = { evidence_id: 'ev_fixture_1', source_type: 'llms_txt', source_url: 'https://fixture-harbor.test/llms.txt', content_hash: HASH_A, metadata: '{}' };
         const unverified = { evidence_id: 'ev_fixture_2', source_type: 'crawl', source_url: 'https://fixture-harbor.test/', content_hash: HASH_A, metadata: '{}' };
-        if (url.searchParams.get('include_content') !== '1') return json({ data: { items: [row, unverified], total: 70 } });
+        if (url.searchParams.get('include_content') !== '1') return json({ data: { items: [row, unverified], total: sc.evidenceTotal ?? 70 } });
         const text = sc.evidenceText === false
           ? { content_verified: false }
           : { content_verified: true, content: 'fixture_ Harbor Plumbing is a plumber serving Portland.' };
-        return json({ data: { items: [{ ...row, ...text }, { ...unverified, content_verified: false }], total: 70 } });
+        return json({ data: { items: [{ ...row, ...text }, { ...unverified, content_verified: false }], total: sc.evidenceTotal ?? 70 } });
       }
       if (p.endsWith('/diagnoses/batch')) return json({ data: { ok: true } });
       if (p.endsWith('/diagnoses')) return json({ data: DIAGNOSES });
@@ -69,7 +72,7 @@ export function makeServices(log: Call[], seq: { n: number }, sc: Scenario = {})
         return json({ data: [{
           artifact_id: 'art_fixture_1', kind: 'faq', content_hash: HASH_A,
           content: sc.artifactContent ?? 'fixture_ Harbor Plumbing serves Portland.',
-          cure_refs: JSON.stringify(sc.cureRefs ?? ['cure_fixture_1']),
+          cure_refs: JSON.stringify(forgedCureRefs),
         }] });
       }
       if (p === '/v1/scorecard/publish') return json({ data: { ok: true } });
@@ -77,8 +80,15 @@ export function makeServices(log: Call[], seq: { n: number }, sc: Scenario = {})
     }),
     EXAMINER: svc('EXAMINER', () => json({ data: { overall_score: 0.8, diagnoses: DIAGNOSES } })),
     SCHEMA_ENGINE: svc('SCHEMA_ENGINE', () => json({ data: { schema_health_score: 1, surfaces_present: 5, surfaces_total: 5, findings: [] } })),
-    COMPILER: svc('COMPILER', () => json({ data: { compiled: sc.compiled ?? 2, errors: 0 } })),
-    FORGE: svc('FORGE', () => json({ data: { artifact_id: 'art_fixture_1', content_hash: HASH_A, surface_kind: 'faq' } }, 201)),
+    COMPILER: svc('COMPILER', () => {
+      const n = sc.compiled ?? 2;
+      const cure_ids = Array.from({ length: n }, (_, i) => `cure_fixture_${i + 1}`);
+      return json({ data: { compiled: n, errors: 0, cure_ids } });
+    }),
+    FORGE: svc('FORGE', (_m, _p, body) => {
+      forgedCureRefs = (body as { cure_refs?: unknown }).cure_refs ?? [];
+      return json({ data: { artifact_id: 'art_fixture_1', content_hash: HASH_A, surface_kind: 'faq' } }, 201);
+    }),
     OBSERVATORY: svc('OBSERVATORY', (_m, p, body) => {
       if (p === '/v1/probe') return json({ data: { probes: [{ status: 200 }, { status: 200 }] } });
       const dry = (body as { dry_run?: boolean }).dry_run;
