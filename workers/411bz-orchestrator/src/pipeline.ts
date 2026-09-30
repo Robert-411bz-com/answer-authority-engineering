@@ -138,7 +138,7 @@ export async function executePipeline(
 
       // Execute stage via service binding
       const compileSteer = fab.a
-        ? (diagnoses: DiagnosisRow[]) => steerCompile(diagnoses, fab.a!, gate)
+        ? { diagnoses: (diagnoses: DiagnosisRow[]) => steerCompile(diagnoses, fab.a!, gate), steer: gate }
         : undefined;
       const result = await executeStage(env, stage, tenantId, runId, headers, stageOutputs, compileSteer);
       stageOutputs[stage] = result.data;
@@ -147,7 +147,10 @@ export async function executePipeline(
       if (fabric && stage === 'forge_content') {
         fab.b = await guarded('B', async () => pointB(fabric.ctx, {
           forge: await loadForgeOutput(env, tenantId, headers, result.data),
-          evidence: await loadEvidenceForState(env, tenantId, headers, policy.resolve('FABRIC_EVIDENCE_STATE_LIMIT')),
+          evidence: await loadEvidenceForState(
+            env, tenantId, headers,
+            policy.resolve('FABRIC_EVIDENCE_STATE_LIMIT'), policy.resolve('FABRIC_EVIDENCE_ITEM_MAX_CHARS'),
+          ),
           contentMaxChars: policy.resolve('FABRIC_CONTENT_STATE_MAX_CHARS'),
         }));
       }
@@ -339,17 +342,28 @@ async function loadForgeOutput(
   };
 }
 
+/**
+ * Evidence text for claim entailment. Only rows whose bytes the engine re-hashed to
+ * their content_hash are sent; a hash with no text is not evidence Jev can read.
+ */
 async function loadEvidenceForState(
-  env: Bindings, tenantId: string, headers: Record<string, string>, limit: number,
+  env: Bindings, tenantId: string, headers: Record<string, string>, limit: number, itemMaxChars: number,
 ): Promise<unknown[]> {
   const resp = await env.ENGINE.fetch(new Request(
-    `http://internal/v1/tenants/${tenantId}/evidence?limit=${limit}`, { headers }
+    `http://internal/v1/tenants/${tenantId}/evidence?limit=${limit}&include_content=1`, { headers }
   ));
   if (!resp.ok) return [];
   const data = await resp.json() as { data?: { items?: Array<Record<string, unknown>> } };
-  return (data.data?.items || []).map(e => ({
-    evidence_id: e.evidence_id, source_type: e.source_type, source_url: e.source_url, metadata: e.metadata,
-  }));
+  return (data.data?.items || [])
+    .filter(e => e.content_verified === true && typeof e.content === 'string')
+    .map(e => {
+      const content = e.content as string;
+      return {
+        evidence_id: e.evidence_id, source_type: e.source_type, source_url: e.source_url,
+        text: content.slice(0, itemMaxChars),
+        ...(content.length > itemMaxChars ? { truncated: true } : {}),
+      };
+    });
 }
 
 // ── Stage executors ──
@@ -357,7 +371,7 @@ async function loadEvidenceForState(
 async function executeStage(
   env: Bindings, stage: Stage, tenantId: string, runId: string,
   headers: Record<string, string>, stageOutputs: Record<string, unknown>,
-  compileSteer?: (diagnoses: DiagnosisRow[]) => unknown[],
+  compileSteer?: { diagnoses: (diagnoses: DiagnosisRow[]) => unknown[]; steer: boolean },
 ): Promise<StageResult> {
   switch (stage) {
     case 'ingest': {
@@ -435,7 +449,9 @@ async function executeStage(
 
       const resp = await env.COMPILER.fetch(new Request('http://internal/v1/compile', {
         method: 'POST', headers,
-        body: JSON.stringify({ tenant_id: tenantId, diagnoses: compileSteer ? compileSteer(diagnoses) : diagnoses }),
+        body: JSON.stringify(compileSteer
+          ? { tenant_id: tenantId, diagnoses: compileSteer.diagnoses(diagnoses), steer_cure_family: compileSteer.steer }
+          : { tenant_id: tenantId, diagnoses }),
       }));
       const data = resp.ok ? await resp.json() as { data: { compiled: number; errors: number } } : null;
       const compiled = data?.data?.compiled || 0;

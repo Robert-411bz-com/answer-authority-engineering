@@ -302,6 +302,36 @@ describe('pipeline', () => {
     expect((compile.body as { diagnoses: unknown[] }).diagnoses).toHaveLength(0);
   });
 
+  it('steering: shadow sends steer_cure_family false, gate sends true', async () => {
+    for (const [mode, steer] of [['shadow', false], ['gate', true]] as const) {
+      const { env, deps, log, runId } = await makeEnv({ mode });
+      await executePipeline(env, runId, 'tenant_fixture_01', undefined, deps);
+      const compile = log.find(c => c.target === 'COMPILER')!;
+      expect((compile.body as { steer_cure_family?: boolean }).steer_cure_family).toBe(steer);
+    }
+  });
+
+  it('point B sends only hash-verified evidence text, never unverified rows', async () => {
+    const { env, deps, log, runId } = await makeEnv({ mode: 'shadow' });
+    await executePipeline(env, runId, 'tenant_fixture_01', undefined, deps);
+    const pointB = jevCalls(log).find(c => askedIds([c]).includes('claim_supported'))!;
+    const evidence = (pointB.body as { state: { evidence: Array<{ evidence_id: string; text: string }> } }).state.evidence;
+    expect(evidence.map(e => e.evidence_id)).toEqual(['ev_fixture_1']);
+    expect(evidence[0]!.text).toContain('Harbor Plumbing');
+  });
+
+  it('no hash-verified evidence text -> claim_supported unanswered, gate pauses, no Jev call for it', async () => {
+    const { env, deps, log, db, runId } = await makeEnv({ mode: 'gate', scenario: { evidenceText: false } });
+    await executePipeline(env, runId, 'tenant_fixture_01', undefined, deps);
+    expect(askedIds(log)).not.toContain('claim_supported');
+    const claim = slips(db.query, runId).find(r => r.question_id === 'claim_supported')!;
+    expect(claim.cwar).toBe('pause_for_review');
+    expect(claim.primary_p).toBeNull();
+    expect(String(claim.detail_json)).toContain('hash-verified evidence');
+    expect(status(db.query, runId).status).toBe('paused');
+    expect(deployed(log)).toBe(false);
+  });
+
   it('9. citation_ready never changes pipeline status', async () => {
     const { env, deps, db, runId } = await makeEnv({
       mode: 'gate',

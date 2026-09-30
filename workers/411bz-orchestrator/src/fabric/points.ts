@@ -93,10 +93,10 @@ export async function pointA(
 }
 
 /**
- * Attach the winning cure_family to each diagnosis in the compile body.
- * ASC does not read cure_family yet; the field is carried so ASC can be steered in a
- * follow-up without another orchestrator change. In gate mode a `none` winner drops
- * the diagnosis from compile; in shadow the diagnosis list is unchanged.
+ * Attach the winning cure_family to each diagnosis in the compile body. ASC uses it as
+ * the cure's action type only when the body also carries steer_cure_family: true, which
+ * the pipeline sends in gate mode only. In gate mode a `none` winner also drops the
+ * diagnosis here; in shadow the diagnosis list and ASC's output are unchanged.
  */
 export function steerCompile(diagnoses: DiagnosisRow[], a: PointAResult, gate: boolean): Array<DiagnosisRow & { cure_family?: string }> {
   const out: Array<DiagnosisRow & { cure_family?: string }> = [];
@@ -129,16 +129,21 @@ export async function pointB(
 ): Promise<PointBResult> {
   const stage = 'forge_content';
   const inst = instance(QUESTIONS.claim_supported, input.forge?.artifact_id ?? null);
-  if (!input.forge || !input.forge.content) {
-    await recordUnanswered(ctx, stage, inst, input.forge ? 'forge artifact has no content to check' : 'forge produced no artifact');
+  const missing = !input.forge ? 'forge produced no artifact'
+    : !input.forge.content ? 'forge artifact has no content to check'
+    : input.evidence.length === 0 ? 'no hash-verified evidence text to check against'
+    : null;
+  if (missing) {
+    await recordUnanswered(ctx, stage, inst, missing);
     return { claimSupported: null, forge: input.forge };
   }
+  const forge = input.forge!;
   const state = {
-    forge_output: { artifact_id: input.forge.artifact_id, kind: input.forge.kind, content: input.forge.content.slice(0, input.contentMaxChars) },
+    forge_output: { artifact_id: forge.artifact_id, kind: forge.kind, content: forge.content!.slice(0, input.contentMaxChars) },
     evidence: input.evidence,
   };
   const answers = await evaluatePoint(ctx, stage, state, [inst]);
-  return { claimSupported: answers.get(inst.key)?.dist ?? null, forge: input.forge };
+  return { claimSupported: answers.get(inst.key)?.dist ?? null, forge };
 }
 
 // ── Point C ──

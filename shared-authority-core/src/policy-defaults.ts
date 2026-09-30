@@ -18,7 +18,11 @@ export const POLICY_DEFAULTS = {
   FABRIC_LOCAL_PROMOTION_BRIER_MARGIN: 0.005,
   FABRIC_PROBABILITY_SUM_TOLERANCE: 0.01,
   FABRIC_EVIDENCE_STATE_LIMIT: 50,
+  FABRIC_EVIDENCE_ITEM_MAX_CHARS: 4000,
   FABRIC_CONTENT_STATE_MAX_CHARS: 20000,
+
+  // ── Evidence bytes (kept beside the hash so entailment checks read real text) ──
+  EVIDENCE_CONTENT_MAX_BYTES: 262144,
 
   // ── Examiner severity thresholds ──
   EXAMINER_SEVERITY_CRITICAL: 0.30,

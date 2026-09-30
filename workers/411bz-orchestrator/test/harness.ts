@@ -4,45 +4,13 @@
  * All data here is synthetic (fixture_ names); none of it is evidence of anything.
  */
 
-import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import initSqlJs, { type Database } from 'sql.js';
+import { makeD1 } from '../../../test-support/sqljs-d1.js';
 import type { Bindings, PipelineDeps } from '../src/pipeline.js';
 import { INERT_LOCAL_HEAD } from '../src/fabric/types.js';
 
-const SCHEMA = readFileSync(fileURLToPath(new URL('../db/orchestrator-schema.sql', import.meta.url)), 'utf8');
-
-// ── D1 over sql.js ──
-
-function selectRows(db: Database, sql: string, args: unknown[]): Record<string, unknown>[] {
-  const s = db.prepare(sql);
-  s.bind(args as never);
-  const out: Record<string, unknown>[] = [];
-  while (s.step()) out.push(s.getAsObject() as Record<string, unknown>);
-  s.free();
-  return out;
-}
-
-class Stmt {
-  private args: unknown[] = [];
-  constructor(private db: Database, private sql: string) {}
-  bind(...args: unknown[]) {
-    this.args = args.map(a => (a === undefined ? null : typeof a === 'boolean' ? (a ? 1 : 0) : a));
-    return this;
-  }
-  async run() { this.db.run(this.sql, this.args as never); return { success: true }; }
-  async first<T>() { return (selectRows(this.db, this.sql, this.args)[0] ?? null) as T | null; }
-  async all<T>() { return { results: selectRows(this.db, this.sql, this.args) as T[] }; }
-}
-
-export async function makeDb() {
-  const SQL = await initSqlJs();
-  const raw = new SQL.Database();
-  raw.run(SCHEMA); // no params -> sqlite3_exec, runs every statement in the schema file
-  const d1 = { prepare: (sql: string) => new Stmt(raw, sql) } as unknown as D1Database;
-  const query = (sql: string, ...args: unknown[]) => selectRows(raw, sql, args);
-  return { d1, raw, query };
-}
+const SCHEMA_PATH = fileURLToPath(new URL('../db/orchestrator-schema.sql', import.meta.url));
+export const makeDb = () => makeD1(SCHEMA_PATH);
 
 // ── Call log shared by services and Jev, for ordering assertions ──
 
@@ -55,6 +23,8 @@ export interface Scenario {
   cureRefs?: string[];
   artifactContent?: string;
   dryRunVerdict?: string;
+  /** false: the engine has no hash-verified text for any evidence row. */
+  evidenceText?: boolean;
 }
 
 const DIAGNOSES = [
@@ -68,24 +38,30 @@ function json(data: unknown, status = 200) {
 
 export function makeServices(log: Call[], seq: { n: number }, sc: Scenario = {}) {
   let aiiCalls = 0;
-  const svc = (target: string, handler: (method: string, path: string, body: unknown) => Response) => ({
+  const svc = (target: string, handler: (method: string, path: string, body: unknown, url: URL) => Response) => ({
     fetch: async (req: Request) => {
       const url = new URL(req.url);
       const body = req.method === 'GET' ? null : await req.json().catch(() => null);
       log.push({ seq: ++seq.n, target, method: req.method, path: url.pathname, body });
-      return handler(req.method, url.pathname, body);
+      return handler(req.method, url.pathname, body, url);
     },
   }) as unknown as Fetcher;
 
   return {
-    ENGINE: svc('ENGINE', (m, p) => {
+    ENGINE: svc('ENGINE', (m, p, _b, url) => {
       if (m === 'GET' && p === '/v1/tenants/tenant_fixture_01') {
         return json({ data: { tenant_id: 'tenant_fixture_01', domain: 'fixture-harbor.test', business_name: 'fixture_Harbor Plumbing', business_type: 'plumber' } });
       }
       if (p.endsWith('/compute-aii')) return json({ data: { aii: aiiCalls++ === 0 ? 0.5 : 0.6 } });
       if (p === '/v1/connectors/ingest') return json({ data: { connector_results: [{ connector: 'fixture' }] } });
       if (p.endsWith('/evidence')) {
-        return json({ data: { items: [{ evidence_id: 'ev_fixture_1', source_type: 'crawl', source_url: 'https://fixture-harbor.test/', metadata: '{}' }], total: 70 } });
+        const row = { evidence_id: 'ev_fixture_1', source_type: 'llms_txt', source_url: 'https://fixture-harbor.test/llms.txt', content_hash: HASH_A, metadata: '{}' };
+        const unverified = { evidence_id: 'ev_fixture_2', source_type: 'crawl', source_url: 'https://fixture-harbor.test/', content_hash: HASH_A, metadata: '{}' };
+        if (url.searchParams.get('include_content') !== '1') return json({ data: { items: [row, unverified], total: 70 } });
+        const text = sc.evidenceText === false
+          ? { content_verified: false }
+          : { content_verified: true, content: 'fixture_ Harbor Plumbing is a plumber serving Portland.' };
+        return json({ data: { items: [{ ...row, ...text }, { ...unverified, content_verified: false }], total: 70 } });
       }
       if (p.endsWith('/diagnoses/batch')) return json({ data: { ok: true } });
       if (p.endsWith('/diagnoses')) return json({ data: DIAGNOSES });
