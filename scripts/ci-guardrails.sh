@@ -8,18 +8,39 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "=== 411bz CI Guardrails ==="
 
-# 1. No hardcoded worker.dev URLs (exclude pure governance description lines)
+# 1. No hardcoded Worker hosts.
+# A hostname or URL fails even when the same line also contains an approved
+# explanation. Only the two bare governance phrases matched below are
+# explanatory. The workers_dev platform flag does not use that host token.
 echo -n "[1/9] No hardcoded worker.dev URLs... "
-MATCHES=$(grep -r 'workers\.dev' "$ROOT" --include='*.ts' --include='*.toml' --include='*.md' --include='*.sh' -n 2>/dev/null \
-  | grep -v 'No `workers\.dev`' \
-  | grep -v 'hardcoded `workers\.dev`' \
-  || true)
-if [ -n "$MATCHES" ]; then
-  echo "FAIL"
-  echo "$MATCHES"
-  FAIL=1
-else
+CHECK1_FAIL=0
+CHECK1_HITS=""
+CHECK1_LINES=()
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  CHECK1_LINES+=("$line")
+done < <(grep -r 'workers\.dev' "$ROOT" --include='*.ts' --include='*.toml' --include='*.md' --include='*.sh' -n 2>/dev/null || true)
+for line in "${CHECK1_LINES[@]+"${CHECK1_LINES[@]}"}"; do
+  if printf '%s\n' "$line" | grep -qE '([A-Za-z0-9-]+\.)workers\.dev|https?://[^[:space:]]*workers\.dev'; then
+    CHECK1_HITS="${CHECK1_HITS}${line}"$'\n'
+    CHECK1_FAIL=1
+    continue
+  fi
+  if printf '%s\n' "$line" | grep -qF 'No `workers.dev`'; then
+    continue
+  fi
+  if printf '%s\n' "$line" | grep -qF 'hardcoded `workers.dev`'; then
+    continue
+  fi
+  CHECK1_HITS="${CHECK1_HITS}${line}"$'\n'
+  CHECK1_FAIL=1
+done
+if [ "$CHECK1_FAIL" -eq 0 ]; then
   echo "PASS"
+else
+  echo "FAIL"
+  printf '%s' "$CHECK1_HITS"
+  FAIL=1
 fi
 
 # 2. All workers use shared-authority-core
@@ -33,12 +54,45 @@ for dir in "$ROOT"/workers/*/; do
 done
 if [ "$CHECK2_FAIL" -eq 0 ]; then echo "PASS"; else FAIL=1; fi
 
-# 3. No inline policy constants (magic numbers)
+# 3. No inline policy constants.
+# The previous check printed PASS on both branches and never set FAIL.
+# Worker source may import and read POLICY_DEFAULTS. It may not define that
+# object, and it may not assign a canonical policy key to a numeric literal.
 echo -n "[3/9] No inline policy constants... "
-if grep -rn 'POLICY_DEFAULTS\.' "$ROOT/workers" --include='*.ts' | grep -v 'import' | grep -v 'node_modules' | head -1 | grep -q .; then
-  echo "PASS (uses POLICY_DEFAULTS)"
+POLICY_FILE="$ROOT/shared-authority-core/src/policy-defaults.ts"
+CHECK3_FAIL=0
+CHECK3_HITS=""
+if [ ! -f "$POLICY_FILE" ]; then
+  echo "FAIL"
+  echo "missing $POLICY_FILE"
+  FAIL=1
 else
-  echo "PASS (no inline constants)"
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    if printf '%s\n' "$line" | grep -qE '(^|[^A-Za-z0-9_])POLICY_DEFAULTS[[:space:]]*='; then
+      CHECK3_HITS="${CHECK3_HITS}${line}"$'\n'
+      CHECK3_FAIL=1
+    fi
+  done < <(grep -rn 'POLICY_DEFAULTS' "$ROOT/workers" --include='*.ts' 2>/dev/null || true)
+
+  while IFS= read -r key; do
+    [ -z "$key" ] && continue
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      if printf '%s\n' "$line" | grep -qE "(^|[^A-Za-z0-9_.])${key}[[:space:]]*[:=][[:space:]]*-?[0-9]"; then
+        CHECK3_HITS="${CHECK3_HITS}${line}"$'\n'
+        CHECK3_FAIL=1
+      fi
+    done < <(grep -rn -- "$key" "$ROOT/workers" --include='*.ts' 2>/dev/null || true)
+  done < <(grep -E '^[[:space:]]+[A-Z][A-Z0-9_]+:' "$POLICY_FILE" | sed -E 's/^[[:space:]]+([A-Z0-9_]+):.*/\1/')
+
+  if [ "$CHECK3_FAIL" -eq 0 ]; then
+    echo "PASS"
+  else
+    echo "FAIL"
+    printf '%s' "$CHECK3_HITS"
+    FAIL=1
+  fi
 fi
 
 # 4. Every wrangler.toml has WORKER_ID
