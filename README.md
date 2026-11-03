@@ -137,8 +137,9 @@ npm run deploy
 ### E2E Testing
 
 ```bash
-# Set BASE_URL to your deployed frontend
-export BASE_URL=https://your-frontend.workers.dev
+# The script reads FRONTEND_URL and AUTH_KEY.
+export FRONTEND_URL=https://api.411bz.ai
+export AUTH_KEY=<your-authority-internal-key>
 bash scripts/e2e-test.sh
 # Target: 12/12 checks passing
 ```
