@@ -12,6 +12,18 @@ export const POLICY_DEFAULTS = {
   CONFIDENCE_THRESHOLD_REVIEW: 0.60,
   CONFIDENCE_THRESHOLD_REJECT: 0.30,
 
+  // ── Fabric decision gate (the three thresholds above are shared; these are Fabric-only) ──
+  FABRIC_JEV_TIMEOUT_MS: 10000,
+  FABRIC_LOCAL_PROMOTION_MIN_LABELS: 12,
+  FABRIC_LOCAL_PROMOTION_BRIER_MARGIN: 0.005,
+  FABRIC_PROBABILITY_SUM_TOLERANCE: 0.01,
+  FABRIC_EVIDENCE_STATE_LIMIT: 50,
+  FABRIC_EVIDENCE_ITEM_MAX_CHARS: 4000,
+  FABRIC_CONTENT_STATE_MAX_CHARS: 20000,
+
+  // ── Evidence bytes (kept beside the hash so entailment checks read real text) ──
+  EVIDENCE_CONTENT_MAX_BYTES: 262144,
+
   // ── Examiner severity thresholds ──
   EXAMINER_SEVERITY_CRITICAL: 0.30,
   EXAMINER_SEVERITY_HIGH: 0.50,

@@ -22,6 +22,14 @@ CREATE TABLE IF NOT EXISTS evidence (
   source_type TEXT NOT NULL, source_url TEXT NOT NULL, content_hash TEXT NOT NULL,
   confidence REAL DEFAULT 0, extracted_at TEXT DEFAULT (datetime('now')), metadata TEXT
 );
+-- Bytes behind evidence.content_hash. Served only when they re-hash to it.
+CREATE TABLE IF NOT EXISTS evidence_content (
+  evidence_id TEXT PRIMARY KEY REFERENCES evidence(evidence_id),
+  tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id),
+  content TEXT NOT NULL, content_hash TEXT NOT NULL,
+  stored_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_evidence_content_tenant ON evidence_content(tenant_id);
 CREATE TABLE IF NOT EXISTS cures (
   cure_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id),
   diagnosis_id TEXT NOT NULL, category TEXT NOT NULL, action_type TEXT NOT NULL,

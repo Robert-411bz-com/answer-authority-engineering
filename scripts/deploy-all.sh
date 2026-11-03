@@ -4,10 +4,6 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "=== 411bz Deploy All Workers ==="
-echo "Running guardrails first..."
-bash "$ROOT/scripts/ci-guardrails.sh"
-
 DEPLOY_ORDER=(
   "411bz-authority-engine"
   "authority-examiner"
@@ -23,6 +19,14 @@ DEPLOY_ORDER=(
   "411bz-operator-workbench"
   "411bz-frontend"
 )
+
+# Guard first: refuse unless the operator accepts overwriting same-named 411bz-ai workers.
+source "$ROOT/scripts/lib/production-guard.sh"
+require_production_overwrite_ack "scripts/deploy-all.sh" "${DEPLOY_ORDER[@]}"
+
+echo "=== 411bz Deploy All Workers ==="
+echo "Running guardrails first..."
+bash "$ROOT/scripts/ci-guardrails.sh"
 
 for worker in "${DEPLOY_ORDER[@]}"; do
   echo ""

@@ -11,6 +11,7 @@ import {
   POLICY_DEFAULTS, CANONICAL_WORKERS,
 } from 'shared-authority-core';
 import { computeFullAII, normalizeScore } from './computation.js';
+import { listEvidenceWithContent, storeEvidenceContent } from './evidence-content.js';
 
 type Bindings = {
   DB: D1Database;
@@ -159,14 +160,17 @@ app.get('/v1/tenants/:tenant_id/evidence', async (c) => {
   assertTenantId(tid);
   const limit = parseInt(c.req.query('limit') || '100');
   const offset = parseInt(c.req.query('offset') || '0');
-  const rows = await c.env.DB.prepare(
-    'SELECT * FROM evidence WHERE tenant_id = ? ORDER BY extracted_at DESC LIMIT ? OFFSET ?'
-  ).bind(tid, limit, offset).all();
+  // include_content=1: text-bearing rows first; `content` only when it re-hashes to content_hash.
+  const items = c.req.query('include_content') === '1'
+    ? await listEvidenceWithContent(c.env.DB, tid, limit, offset)
+    : (await c.env.DB.prepare(
+        'SELECT * FROM evidence WHERE tenant_id = ? ORDER BY extracted_at DESC LIMIT ? OFFSET ?'
+      ).bind(tid, limit, offset).all()).results;
   const countRow = await c.env.DB.prepare(
     'SELECT COUNT(*) as total FROM evidence WHERE tenant_id = ?'
   ).bind(tid).first<{ total: number }>();
   return c.json(wrapTruth(
-    { items: rows.results, total: countRow?.total || 0, limit, offset },
+    { items, total: countRow?.total || 0, limit, offset },
     c.env.WORKER_ID, generateRequestId()
   ));
 });
@@ -198,8 +202,9 @@ app.post('/v1/tenants/:tenant_id/evidence', async (c) => {
   await c.env.DB.prepare(
     'INSERT INTO evidence (evidence_id, tenant_id, source_type, source_url, content_hash, confidence) VALUES (?, ?, ?, ?, ?, ?)'
   ).bind(eid, tid, body.source_type, body.source_url, hash, body.confidence).run();
+  const contentStored = await storeEvidenceContent(c.env.DB, eid, tid, body.content, hash);
   await logAudit(c.env.DB, tid, 'system', 'evidence_created', 'evidence', eid);
-  return c.json({ evidence_id: eid, content_hash: hash }, 201);
+  return c.json({ evidence_id: eid, content_hash: hash, content_stored: contentStored }, 201);
 });
 
 // ── Claims ──
