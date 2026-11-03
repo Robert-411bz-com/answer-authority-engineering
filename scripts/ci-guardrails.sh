@@ -79,7 +79,7 @@ else
     [ -z "$key" ] && continue
     while IFS= read -r line; do
       [ -z "$line" ] && continue
-      if printf '%s\n' "$line" | grep -qE "(^|[^A-Za-z0-9_.])${key}[[:space:]]*[:=][[:space:]]*-?[0-9]"; then
+      if printf '%s\n' "$line" | grep -qE "(^|[^A-Za-z0-9_])${key}[[:space:]]*[:=][[:space:]]*-?[0-9]"; then
         CHECK3_HITS="${CHECK3_HITS}${line}"$'\n'
         CHECK3_FAIL=1
       fi

@@ -104,6 +104,11 @@ track "$INLINE" "const EXAMINER_CATEGORY_COUNT = 600;"
 expect_violation "unauthorized inline policy constant" "guardrail-probe-inline.ts"
 drop "$INLINE"
 
+DOTTED="$ROOT/workers/411bz-authority-engine/src/guardrail-probe-dotted.ts"
+track "$DOTTED" "POLICY_DEFAULTS.EXAMINER_CATEGORY_COUNT = 1;"
+expect_violation "dotted policy assignment" "guardrail-probe-dotted.ts"
+drop "$DOTTED"
+
 DUP="$ROOT/workers/411bz-orchestrator/src/guardrail-probe-duplicate.ts"
 track "$DUP" "export const POLICY_DEFAULTS = { MAX_OVERLAYS: 5 };"
 expect_violation "duplicate policy definition" "guardrail-probe-duplicate.ts"
