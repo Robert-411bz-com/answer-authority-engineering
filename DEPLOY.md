@@ -153,7 +153,7 @@ cd workers/411bz-frontend && npx wrangler deploy && cd ../..
 ## Step 5: Verify Deployment
 
 ```bash
-BASE=https://411bz-frontend.bob-0a9.workers.dev
+BASE=https://api.411bz.ai
 
 # Version check — must show 4.0.0
 curl -s $BASE/api/runtime-config | grep version
@@ -193,7 +193,7 @@ printf '%s' "$SECRET" | npx wrangler secret put TOKEN_SIGNING_SECRET --name 411b
 ## Step 7: Verify Auth Is Active
 
 ```bash
-BASE=https://411bz-frontend.bob-0a9.workers.dev
+BASE=https://api.411bz.ai
 
 # Dashboard should now redirect to login
 curl -sI $BASE/dashboard/test-tenant | grep Location

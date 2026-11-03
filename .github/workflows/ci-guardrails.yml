@@ -1,0 +1,13 @@
+name: CI Guardrails
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run guardrail checks
+        run: bash scripts/ci-guardrails.sh

@@ -101,9 +101,15 @@ else
   echo -e "  Try: curl -s https://api.411bz.ai/runtime-config | jq '.version'"
 fi
 
-# Check stripe health
+# Stripe has no public production hostname in this repo. The frontend
+# reaches it through the STRIPE service binding. Set STRIPE_HEALTH_URL
+# to a public health URL only when one exists.
 echo -e "Checking stripe health..."
-STRIPE_HEALTH=$(curl -sf https://411bz-stripe.bob-0a9.workers.dev/health 2>/dev/null || echo "FETCH_FAILED")
+if [[ -n "${STRIPE_HEALTH_URL:-}" ]]; then
+  STRIPE_HEALTH=$(curl -sf "$STRIPE_HEALTH_URL" 2>/dev/null || echo "FETCH_FAILED")
+else
+  STRIPE_HEALTH="not_measured_no_public_host"
+fi
 echo -e "  Stripe: $STRIPE_HEALTH"
 
 echo ""

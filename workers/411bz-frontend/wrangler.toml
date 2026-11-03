@@ -37,7 +37,6 @@ service = "411bz-stripe"
 [vars]
 ENVIRONMENT = "production"
 WORKER_ID = "411bz-frontend"
-FRONTEND_HOST = "https://411bz-frontend.bob-0a9.workers.dev"
 
 # ── D1 database (observatory-production) ──
 # Used for: auth_codes, observatory_sessions, observatory_tenant_users

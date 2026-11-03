@@ -14,7 +14,7 @@
 #   - AUTHORITY_INTERNAL_KEY set in all workers
 #
 # Usage:
-#   FRONTEND_URL=https://411bz-frontend.bob-0a9.workers.dev \
+#   FRONTEND_URL=https://api.411bz.ai \
 #   AUTH_KEY=<your-authority-internal-key> \
 #   bash scripts/e2e-test.sh
 # ============================================================================
@@ -22,7 +22,7 @@ set -euo pipefail
 
 # ── Validate env before any network calls ──
 if [[ -z "${FRONTEND_URL:-}" ]]; then
-  echo "ERROR: Set FRONTEND_URL first (e.g. https://411bz-frontend.bob-0a9.workers.dev)."
+  echo "ERROR: Set FRONTEND_URL first (e.g. https://api.411bz.ai)."
   exit 1
 fi
 if [[ -z "${AUTH_KEY:-}" ]]; then
