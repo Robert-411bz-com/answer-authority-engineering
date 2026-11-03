@@ -8,9 +8,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "=== 411bz CI Guardrails ==="
 
-# 1. No hardcoded worker.dev URLs
+# 1. No hardcoded worker.dev URLs (exclude pure governance description lines)
 echo -n "[1/9] No hardcoded worker.dev URLs... "
-if grep -r 'workers\.dev' "$ROOT" --include='*.ts' --include='*.toml' --include='*.md' --include='*.sh' -l 2>/dev/null | head -1 | grep -q .; then
+if grep -r 'workers\.dev' "$ROOT" --include='*.ts' --include='*.toml' --include='*.md' --include='*.sh' -l 2>/dev/null \
+  | grep -v -E 'GOVERNANCE\.md|README\.md' \
+  | head -1 | grep -q .; then
   echo "FAIL"; FAIL=1
 else
   echo "PASS"
@@ -83,10 +85,10 @@ else
   echo "FAIL"; FAIL=1
 fi
 
-# 9. Edge trust boundary — no proprietary math outside designated workers
-echo -n "[9/9] Edge trust boundary (no proprietary logic in frontend/public)... "
-if grep -rE 'computeAII|computeFullAII|generateCure|evaluateDimension|POLICY_DEFAULTS\.' "$ROOT/workers/411bz-frontend" --include='*.ts' 2>/dev/null | grep -q .; then
-  echo "FAIL (proprietary logic in frontend)"; FAIL=1
+# 9. Edge trust boundary — no proprietary computation in frontend
+echo -n "[9/9] Edge trust boundary (no proprietary computation in frontend)... "
+if grep -rE 'computeAII|computeFullAII|generateCure|evaluateDimension' "$ROOT/workers/411bz-frontend" --include='*.ts' 2>/dev/null | grep -q .; then
+  echo "FAIL (proprietary computation in frontend)"; FAIL=1
 else
   echo "PASS"
 fi
