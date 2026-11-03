@@ -10,10 +10,11 @@
 6. **Sole cure compiler** — Only `authority-solution-compiler` creates cure objects. No other worker may create cures.
 7. **Evidence linkage** — Every cure must reference at least one `evidence_id`. No cure without evidence.
 8. **Truth envelopes** — Every inter-worker response is wrapped in a `TruthEnvelope` with provenance metadata.
+9. **Edge trust boundary** — Proprietary algorithms, scoring models, cure generation, Examiner evaluation logic, and policy math live exclusively inside service-bound workers (`411bz-authority-engine`, `authority-solution-compiler`, `authority-examiner`). The frontend and public API surfaces must remain thin: authenticate, authorize, request computation via service binding, and return only a bounded result that has passed `enforceProofGate()` and carries a real `computeContentHash()`.
 
 ## CI/CD Rules
 
-- All 8 guardrail checks must pass before merge.
+- All 9 guardrail checks must pass before merge.
 - Deploy order is enforced: engine first, frontend last.
 - D1 migrations run before worker deployment.
 - No `.dev.vars` files may be committed.
