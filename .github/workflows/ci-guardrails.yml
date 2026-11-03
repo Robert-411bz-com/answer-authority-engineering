@@ -10,4 +10,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run guardrail checks
-        run: bash scripts/ci-guardrails.sh
+        run: |
+          bash scripts/ci-guardrails-regression.sh
+          bash scripts/ci-guardrails.sh
